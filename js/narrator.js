@@ -31,7 +31,7 @@ const Narrator = {
   factsFor(kind, payload) {
     const s = Engine.state;
     const v = s.vitals;
-    const panel = `[当前] 第${s.week}周·第${s.day}天 行动力${s.ap}/4 | 生命${v.hp} 饱腹${v.hunger} San${v.san} 感染${v.infection} | 队友${s.companions.map(c=>c.name).join('、')||'无'}`;
+    const panel = `[当前] 第${s.week}周·第${s.day}天 行动力${s.ap}/4 | 生命${v.hp} 饱腹${v.hunger} 水分${v.hydration} San${v.san} 感染${v.infection} | 队友${s.companions.map(c=>c.name).join('、')||'无'}`;
     if (kind === 'intro') {
       return `${panel}\n玩家：${s.name}，${s.gender}，${s.age}岁，职业${s.profession}。时期：${periodCN(s.period)}。初始物品：${s.inventory.join('、')}。\n请写开场：先用一两句加粗、黑暗压迫的格言式导语，再欢迎玩家、描绘青阳市当下的处境，最后给出第一周的行动方向(2-4 个编号选项)。提醒：可招募队友≤5名，队友死亡率与普通人相同。`;
     }
@@ -174,7 +174,7 @@ const Narrator = {
 
 function periodCN(p) { return { early: '爆发初期(1-10天)', mid: '爆发中期(11-30天)', late: '爆发后期(31天+)' }[p] || p; }
 function fmtDeltas(d) {
-  const names = { hp: '生命', hunger: '饱腹', san: 'San', infection: '感染' };
+  const names = { hp: '生命', hunger: '饱腹', hydration: '水分', san: 'San', infection: '感染' };
   const parts = Object.keys(d || {}).filter(k => d[k]).map(k => `${names[k] || k}${d[k] > 0 ? '+' : ''}${d[k]}`);
   return parts.length ? parts.join('，') : '无明显变化';
 }
@@ -182,6 +182,7 @@ function dangerHint(v) {
   if (v.infection >= 61) return '你的视野开始发灰，喉咙里有腐烂的味道——感染在啃噬你。';
   if (v.hp <= 19) return '每走一步都疼，血在往外渗。你撑不了多久了。';
   if (v.hunger <= 19) return '胃在绞痛，手开始抖。你需要食物，马上。';
+  if (v.hydration <= 19) return '喉咙干得像砂纸，眼前的光开始发白。你必须找到水。';
   if (v.san <= 19) return '有声音在你耳边低语。你不确定那是不是真的。';
   return '你喘了口气，暂时还活着。';
 }

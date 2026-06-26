@@ -33,10 +33,16 @@ const OfflineNarrator = {
     const out = [];
     if (v.infection >= 61) out.push(this.pick(['你的视野开始发灰，喉咙里有腐烂的味道——它在你身体里安家', '指甲泛起青黑，你尽量不去看自己的手']));
     else if (v.infection >= 31) out.push(this.pick(['伤口周围烧得发烫，那不是普通的炎症', '一阵阵的低热让你分不清白天黑夜']));
+    const injuries = typeof Engine !== 'undefined' && Engine.injuryIntel ? Engine.injuryIntel() : [];
+    if (injuries.some(i => i.type === 'bleeding')) out.push(this.pick(['绷带底下又潮了一片，你知道血还没完全止住', '伤口一跳一跳地疼，每次用力都会重新渗血']));
+    if (injuries.some(i => i.type === 'fracture')) out.push(this.pick(['骨头深处传来钝痛，你不得不重新调整重心', '受伤的关节不肯听话，稍一用力就像被钉子撬开']));
+    if (injuries.some(i => i.type === 'fever')) out.push(this.pick(['热意从后颈爬上来，水分像被身体悄悄偷走', '你一阵发冷又一阵发热，脑子里蒙着雾']));
     if (v.hp <= 19) out.push(this.pick(['每走一步都疼，血在往外渗，你撑不了多久', '眼前阵阵发黑，你扶着墙才没倒下']));
     else if (v.hp <= 49) out.push(this.pick(['旧伤还没好，新伤又添了一道', '你跛着脚，留意着每一个可能要命的角落']));
     if (v.hunger <= 19) out.push(this.pick(['胃在绞痛，手开始抖，你需要食物，马上', '饿到一定程度，连恐惧都变得遥远']));
-    else if (v.hunger <= 49) out.push(this.pick(['肚子空了大半天，脑子转得慢了', '你舔了舔干裂的嘴唇']));
+    else if (v.hunger <= 49) out.push(this.pick(['肚子空了大半天，脑子转得慢了', '你把最后一点食物念头压回胃里']));
+    if (v.hydration <= 19) out.push(this.pick(['喉咙干得像砂纸，眼前的光开始发白', '你舔了舔干裂的嘴唇，连唾液都省不出来']));
+    else if (v.hydration <= 49) out.push(this.pick(['嘴唇裂开细口，水成了脑子里最亮的词', '你每次吞咽都能听见喉咙在刮']));
     if (v.san <= 19) out.push(this.pick(['有声音在你耳边低语，你不确定那是不是真的', '镜子般的水洼里，那个影子好像比你慢了半拍']));
     else if (v.san <= 49) out.push(this.pick(['你回头看了一眼，没有人——应该没有', '太安静了，安静得让人想尖叫']));
     return out;
@@ -148,6 +154,23 @@ const OfflineNarrator = {
     const ok = r.gains && r.gains.length;
     return ok ? `你蹲在地上摆弄那些零碎，叮叮当当忙了半天——${r.gains.join('、')} 成了，握在手里有了点底气。`
       : `结构没撑住，材料废了一地。末世不相信差不多。`;
+  },
+  act_process(s, r) {
+    const name = r.processRecipe || '加工补给';
+    const spent = r.losses && r.losses.length ? `你消耗了 ${r.losses.join('、')}。` : '';
+    if (r.gains && r.gains.length) {
+      const line = {
+        '净化雨水': '水汽贴着锅沿往上爬，过滤过的水终于不再那么可疑。',
+        '煮泡面': '热汤的气味很薄，却足够把人从崩紧的状态里拽回来一点。',
+        '处理腐肉': '你把火候压到最狠，直到那股危险的腥味被烤焦味盖过去。',
+        '热饮安神': '甜味在杯底散开，像末世里一小块不合时宜的温柔。',
+      }[name] || '你把能处理的材料重新收拾成补给。';
+      return `${line} ${spent} 成品：${r.gains.join('、')}。`;
+    }
+    const bad = name === '处理腐肉'
+      ? '味道不对。你还是立刻丢掉了它，但那股恶心已经在胃里翻起来。'
+      : '火候、工具、材料，至少有一样出了岔子。最后只剩一堆不能入口的废料。';
+    return `${bad} ${spent}`.trim();
   },
   act_clear(s, r) {
     const loc = r.location || '据点周边';
@@ -290,18 +313,23 @@ const OfflineNarrator = {
   // 上下文选项：尽量用「能直接映射到行动」的措辞，点击即触发对应行动
   contextChoices(s, r) {
     const v = s.vitals, opts = [];
+    const canProcess = typeof Engine !== 'undefined' && Engine.availableProcessRecipes && Engine.availableProcessRecipes().length > 0;
+    const hurt = v.hp <= 49 || (typeof Engine !== 'undefined' && Engine.hasActiveInjury && Engine.hasActiveInjury());
     if (s.ap > 0) {
       opts.push('寻找物资');
       if ((s.flags.threat || 2) >= 2) opts.push('清理周边丧尸');
       else opts.push('修缮庇护所');
-      if (v.hp <= 49) opts.push('处理伤口');                 // → 提示用医疗物品
+      if (hurt) opts.push('处理伤口');                       // → 提示用医疗物品
+      else if (v.hydration <= 49) opts.push('喝水');          // → 提示饮水
       else if (v.hunger <= 49) opts.push('吃点东西');        // → 提示进食
+      else if (canProcess) opts.push('加工补给');
       else if (v.san <= 49) opts.push('祈祷冥想');
       else if (s.companions.length) opts.push('与队友闲聊');
       else opts.push('深度休整');
     } else {
       opts.push('进入周末结算');
-      if (v.hp <= 49) opts.push('处理伤口');
+      if (hurt) opts.push('处理伤口');
+      if (v.hydration <= 49) opts.push('喝水');
       if (v.hunger <= 49) opts.push('吃点东西');
     }
     return this.choiceBlock(opts.slice(0, 4));

@@ -159,6 +159,8 @@ const UI = {
       const trainable = GameData.ATTRS.filter(a => !['luck', 'chm'].includes(a.key));
       this.subMenu('训练哪项属性：', trainable.map(a => a.name),
         name => this.doAction(id, { trainAttr: GameData.ATTRS.find(a => a.name === name).key }));
+    } else if (def.pickProcess) {
+      this.subMenu('选择加工方式：', this.processOptions(), recipeId => this.doAction(id, { recipeId }));
     } else {
       this.doAction(id, {});
     }
@@ -178,6 +180,23 @@ const UI = {
         title: `${Engine.routeTitle(name)}；常见势力：${factions}`,
       };
     });
+  },
+
+  processOptions() {
+    return (GameData.PROCESS_RECIPES || []).map(r => {
+      const missing = Engine.processMissing(r);
+      const tag = missing.length ? `缺 ${missing.join('、')}` : '可做';
+      return { value: r.id, label: `${r.name}（${tag}）`, title: r.desc || r.name };
+    });
+  },
+
+  processRecipeFromText(text) {
+    const t = String(text || '');
+    if (/净水|净化|烧水|过滤/.test(t)) return 'purify-water';
+    if (/泡面|方便面|煮面/.test(t)) return 'cook-noodles';
+    if (/腐肉|生肉|处理肉|烤肉/.test(t)) return 'cook-raw';
+    if (/热饮|热巧克力|安神饮|甜饮/.test(t)) return 'warm-drink';
+    return null;
   },
 
   subMenu(title, options, cb) {
@@ -216,7 +235,7 @@ const UI = {
   wantsEatCommand(text) {
     const t = String(text || '');
     if (this.wantsForageCommand(t)) return false;
-    return /吃饭|吃东西|吃点|吃些|进食|用餐|开饭|口粮|垫垫|充饥|填肚|做饭|煮饭|烹饪|吃.*(罐头|饼干|干粮|泡面|能量棒|巧克力|食物)/.test(t);
+    return /吃饭|吃东西|吃点|吃些|进食|用餐|开饭|口粮|垫垫|充饥|填肚|吃.*(罐头|饼干|干粮|泡面|能量棒|巧克力|食物)/.test(t);
   },
 
   routeTypedCommand(text) {
@@ -224,6 +243,9 @@ const UI = {
     const loc = this.locationFromText(t);
     const attr = this.trainAttrFromText(t);
     if (/结算|周末/.test(t)) return { kind: 'weekend' };
+    const recipeId = this.processRecipeFromText(t);
+    if (recipeId) return { kind: 'action', id: 'process', opt: { recipeId } };
+    if (/加工补给|做饭|煮饭|烹饪|处理食物|做吃的/.test(t)) return { kind: 'action', id: 'process', opt: {} };
     if (/处理伤|包扎|伤口|医疗|止血|疗伤/.test(t)) return { kind: 'hint', what: 'med' };
     if (this.wantsDrinkCommand(t)) return { kind: 'hint', what: 'water' };
     if (this.wantsEatCommand(t)) return { kind: 'hint', what: 'food' };
@@ -245,6 +267,7 @@ const UI = {
       const opt = {};
       if ((it.id === 'scavenge' || it.id === 'clear' || it.id === 'recruit') && loc) opt.location = loc;
       if (it.id === 'train' && attr) opt.trainAttr = attr;
+      if (it.id === 'process' && it.recipeId) opt.recipeId = it.recipeId;
       return { kind: 'action', id: it.id, opt };
     }
     if (it.kind === 'hint' || it.kind === 'weekend') return it;
@@ -299,6 +322,11 @@ const UI = {
         this.pushPlayer(`“${text}”`);
         this.subMenu('训练哪项属性：', trainable.map(a => a.name),
           name => this.doAction(routed.id, { trainAttr: GameData.ATTRS.find(a => a.name === name).key, sourceText: text }));
+        return;
+      }
+      if (def.pickProcess && !opt.recipeId) {
+        this.pushPlayer(`“${text}”`);
+        this.subMenu('选择加工方式：', this.processOptions(), recipeId => this.doAction(routed.id, { recipeId, sourceText: text }));
         return;
       }
       await this.doAction(routed.id, opt);
@@ -360,6 +388,9 @@ const UI = {
       } else if (def.pickTrainAttr) {
         const tr = GameData.ATTRS.filter(a => !['luck', 'chm'].includes(a.key));
         this.pushSubChoices('训练哪一项？', tr.map(a => a.name), nm => this.doAction(it.id, { trainAttr: GameData.ATTRS.find(a => a.name === nm).key }));
+      } else if (def.pickProcess) {
+        if (it.recipeId) this.doAction(it.id, { recipeId: it.recipeId });
+        else this.pushSubChoices('加工哪一种补给？', this.processOptions(), recipeId => this.doAction(it.id, { recipeId }));
       } else {
         this.doAction(it.id, {});
       }
@@ -395,12 +426,13 @@ const UI = {
 
   // 点「处理伤口 / 吃饭 / 喝水」→ 自动使用携带里最合适的一件（不耗行动力，不摇骰）
   autoUse(category) {
-    const want = category === 'med' ? ['med'] : category === 'water' ? ['water'] : ['food', 'water'];
+    const want = category === 'med' ? ['med'] : category === 'water' ? ['water'] : ['food', 'raw'];
     let best = null;
     for (const it of Engine.state.inventory) {
       const eff = Engine._effectFor(it);
       if (!eff || !want.includes(eff.type)) continue;
-      const score = (eff.hp ? eff.hp[0] + eff.hp[1] : 0) + (eff.hunger ? eff.hunger[0] + eff.hunger[1] : 0);
+      const treatScore = Object.values(eff.treats || {}).reduce((sum, n) => sum + n, 0) * 24;
+      const score = treatScore + (eff.hp ? eff.hp[0] + eff.hp[1] : 0) + (eff.hunger ? eff.hunger[0] + eff.hunger[1] : 0) + (eff.hydration ? eff.hydration[0] + eff.hydration[1] : 0);
       if (!best || score > best.score) best = { name: it, score };
     }
     if (!best) {
@@ -408,7 +440,7 @@ const UI = {
         ? '背包里没有医疗物品，可继续选择别的行动。'
         : category === 'water'
           ? '背包里没有水，可继续选择别的行动。'
-          : '背包里没有食物或水，可继续选择别的行动。';
+          : '背包里没有食物，可继续选择别的行动。';
       this.toast(msg);
       this.pushSystem(msg);
       return false;
@@ -420,6 +452,9 @@ const UI = {
     const t = raw.replace(/^\s*\d+[\.\、:：]?\s*/, '').trim();
     const ap = Engine.state.ap;
     if (ap <= 0 && /结算|周末/.test(t)) return { kind: 'weekend' };
+    const recipeId = this.processRecipeFromText(t);
+    if (recipeId) return { kind: 'action', id: 'process', recipeId };
+    if (/加工补给|做饭|煮饭|烹饪|处理食物|做吃的/.test(t)) return { kind: 'action', id: 'process' };
     if (/处理伤|包扎|伤口|医疗|止血|疗伤/.test(t)) return { kind: 'hint', what: 'med' };
     if (this.wantsDrinkCommand(t)) return { kind: 'hint', what: 'water' };
     if (this.wantsEatCommand(t)) return { kind: 'hint', what: 'food' };
@@ -429,6 +464,7 @@ const UI = {
       ['clear',    /清理|清剿|清.{0,3}丧尸|清.{0,3}尸|肃清|打丧尸|杀丧尸|处理.{0,3}尸/],
       ['recruit',  /招募|交流|幸存者|找人|碰.{0,3}活人|结识/],
       ['craft',    /制造|改装|打造|做.{0,3}(武器|护甲)/],
+      ['process',  /加工补给|做饭|煮饭|烹饪|净水|烧水|过滤|煮泡面|处理腐肉|热饮|做吃的/],
       ['train',    /训练|锻炼|练[力敏智感口]|练.{0,4}(力量|敏捷|智力|感知|口才)/],
       ['research', /研究|阅读|翻阅|看书|读.{0,2}书|查资料/],
       ['chat',     /闲聊|聊天|玩牌|与队友/],
@@ -484,6 +520,9 @@ const UI = {
       }).join('，');
       lines.push('路线变化：' + routeText);
     }
+    if (payload.injuryChanges && payload.injuryChanges.length) {
+      lines.push('伤势变化：' + payload.injuryChanges.map(c => `${c.name}${c.before}→${c.after}${c.reason ? '(' + c.reason + ')' : ''}`).join('，'));
+    }
     if (payload.factionChanges && payload.factionChanges.length) {
       lines.push('势力变化：' + payload.factionChanges.map(c => `${c.name}${c.before}→${c.after}${c.reason ? '(' + c.reason + ')' : ''}`).join('，'));
     }
@@ -500,7 +539,7 @@ const UI = {
     }
     const d = payload.deltas;
     if (d) {
-      const names = { hp: '生命', hunger: '饱腹', san: 'San', infection: '感染' };
+      const names = { hp: '生命', hunger: '饱腹', hydration: '水分', san: 'San', infection: '感染' };
       const ds = Object.keys(d).filter(k => d[k]).map(k => `${names[k] || k}${d[k] > 0 ? '+' : ''}${d[k]}`);
       if (ds.length) lines.push('结算：' + ds.join('，'));
     }
@@ -572,15 +611,21 @@ const UI = {
     const heroTags = [];
     if (v.infection >= 61) heroTags.push('infected');
     else if (v.infection >= 31) heroTags.push('fever');
+    const injuries = Engine.injuryIntel ? Engine.injuryIntel() : [];
+    if (injuries.some(i => i.type === 'bleeding' && i.value >= 2)) heroTags.push('bleeding');
+    else if (injuries.some(i => i.type === 'fracture')) heroTags.push('fracture');
+    else if (injuries.some(i => i.type === 'fever')) heroTags.push('fever');
     if (v.hp <= 19) heroTags.push('critical');
     else if (v.hp <= 49) heroTags.push('hurt');
     if (v.san <= 19) heroTags.push('panic');
     else if (v.san <= 49) heroTags.push('sad');
+    if (v.hydration <= 19) heroTags.push('dehydrate');
+    else if (v.hydration <= 49) heroTags.push('thirsty');
     if (v.hunger <= 19) heroTags.push('starve');
     else if (v.hunger <= 49) heroTags.push('hungry');
     const heroMood = heroTags[0] || 'steady';
     const heroText = {
-      infected: '感染发热', fever: '低烧', critical: '濒死', hurt: '受伤', panic: '崩溃边缘', sad: '低落', starve: '虚脱', hungry: '饿', steady: '还撑着'
+      infected: '感染发热', fever: '低烧', bleeding: '失血', fracture: '骨伤', critical: '濒死', hurt: '受伤', panic: '崩溃边缘', sad: '低落', dehydrate: '脱水', thirsty: '口渴', starve: '虚脱', hungry: '饿', steady: '还撑着'
     }[heroMood];
 
     let companion = null;
@@ -634,6 +679,10 @@ const UI = {
       `<div class="attr"><span>${a.name}</span><b>${s.attrs[a.key]}</b></div>`).join('');
     const buffs = s.buffs.length
       ? s.buffs.map(b => `<div class="buff" title="${b.desc}">「${b.name}」</div>`).join('') : '<span class="dim">无</span>';
+    const injuryList = Engine.injuryIntel ? Engine.injuryIntel() : [];
+    const injuries = injuryList.length
+      ? injuryList.map(i => `<div class="injury i-${i.type}" title="${this.esc(i.desc)}"><b>${this.esc(i.name)}</b><span>${this.esc(i.level)}</span></div>`).join('')
+      : '<span class="dim">暂无持续伤势</span>';
 
     const carried = s.inventory.length
       ? s.inventory.map((it, i) => {
@@ -690,6 +739,7 @@ const UI = {
         <div class="time">第 <b>${s.week}</b> 周 · 第 ${s.day} 天 · 行动力 <b>${s.ap}</b>/4</div>
       </div>
       <div class="vitals">${GameData.VITALS.map(x => bar(x.key)).join('')}</div>
+      <div class="sec injury-sec"><h3>持续伤势</h3><div class="injuries">${injuries}</div></div>
       <div class="sec priority-sec"><h3>属性</h3><div class="attrs priority-attrs">${attrs}</div></div>
       <div class="sec priority-sec carry-sec"><h3>携带物品 <span class="dim">(${s.inventory.length}/${Engine.carryCap()})</span></h3>
         <ul class="inv carried priority-inv">${carried}</ul></div>
@@ -739,7 +789,7 @@ const UI = {
     return true;
   },
   deltaText(d) {
-    const names = { hp: '生命', hunger: '饱腹', san: 'San', infection: '感染' };
+    const names = { hp: '生命', hunger: '饱腹', hydration: '水分', san: 'San', infection: '感染' };
     const ds = Object.keys(d || {}).filter(k => d[k]).map(k => `${names[k] || k}${d[k] > 0 ? '+' : ''}${d[k]}`);
     return ds.length ? '（' + ds.join('，') + '）' : '';
   },
@@ -832,6 +882,7 @@ const UI = {
     const s = save.state;
     if (!s.vitals || !s.attrs) return '存档缺少数值面板';
     const vitalKeys = ['hp', 'hunger', 'san', 'infection'];
+    if (s.vitals.hydration != null && !Number.isFinite(+s.vitals.hydration)) return '存档水分无效';
     const attrKeys = GameData.ATTRS.map(a => a.key);
     if (!vitalKeys.every(k => Number.isFinite(+s.vitals[k]))) return '存档生命/饱腹/San/感染无效';
     if (!attrKeys.every(k => Number.isFinite(+s.attrs[k]))) return '存档属性无效';

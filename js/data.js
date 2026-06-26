@@ -18,13 +18,21 @@ const GameData = {
     { key: 'chm', name: '魅力', desc: '初始态度、交易价、招募意向、士气' },
   ],
 
-  /* ---- 四条生存数值 ---- */
+  /* ---- 五项生存数值 ---- */
   VITALS: [
     { key: 'hp',        name: '生命值', max: 100, good: 'high' },
     { key: 'hunger',    name: '饱腹度', max: 100, good: 'high' },
+    { key: 'hydration', name: '水分',   max: 100, good: 'high' },
     { key: 'san',       name: 'San值',  max: 100, good: 'high' },
     { key: 'infection', name: '感染度', max: 100, good: 'low'  },
   ],
+
+  /* ---- 持续伤势：由战斗/事故产生，医疗物品可处理 ---- */
+  INJURIES: {
+    bleeding: { name: '流血', levels: ['渗血', '失血', '大出血'], desc: '周末持续掉生命；绷带、止血带、急救包最有效。' },
+    fracture: { name: '骨折', levels: ['扭伤', '骨裂', '骨折'], desc: '压低力量和敏捷；止痛药、吗啡只能缓解，急救包才能更稳地处理。' },
+    fever:    { name: '发烧', levels: ['低烧', '高烧', '谵妄'], desc: '压低智力和感知，并加快水分消耗；抗生素和休整可压制。' },
+  },
 
   /* ---- 职业：属性倾向(在随机基础上叠加) + 初始物品 + 备注 ---- */
   PROFESSIONS: {
@@ -99,43 +107,53 @@ const GameData = {
     '巧克力':     { type: 'food',  hunger: [15, 25], san: [2, 5], msg: '久违的甜，舌尖泛起一点活着的实感' },
     '盐':         { type: 'food',  hunger: [3, 6],   msg: '舔了点盐，至少不那么发虚' },
     '腐肉':       { type: 'raw',   hunger: [5, 10],  msg: '你强忍恶心吞下腐肉' },
+    '热泡面':     { type: 'food',  hunger: [34, 48], hydration: [4, 8], msg: '热汤和面条一起下肚，胃终于安静了一会儿' },
+    '熟肉':       { type: 'food',  hunger: [18, 28], msg: '肉被彻底烤熟，味道糟糕，但至少没那么危险' },
+    '热饮':       { type: 'water', hydration: [18, 30], san: [5, 10], msg: '一点热意顺着喉咙落下去，手不再抖得那么厉害' },
     // 水
-    '矿泉水':     { type: 'water', hunger: [5, 10],  msg: '你灌下半瓶水，喉咙不再冒烟' },
-    '瓶装水':     { type: 'water', hunger: [5, 10],  msg: '干净的水，难得' },
-    '半瓶矿泉水': { type: 'water', hunger: [3, 6],   msg: '剩下的半瓶水，省着喝' },
-    '雨水':       { type: 'water', hunger: [3, 8],   msg: '接来的雨水带着铁锈味' },
+    '矿泉水':     { type: 'water', hydration: [25, 40], msg: '你灌下半瓶水，喉咙不再冒烟' },
+    '瓶装水':     { type: 'water', hydration: [25, 40], msg: '干净的水，难得' },
+    '半瓶矿泉水': { type: 'water', hydration: [14, 24], msg: '剩下的半瓶水，省着喝' },
+    '雨水':       { type: 'water', hydration: [12, 22], msg: '接来的雨水带着铁锈味' },
     // 医疗
-    '急救包':     { type: 'med',   hp: [20, 40], msg: '你仔细清创、上药、包扎' },
-    '止血带':     { type: 'med',   hp: [8, 15],  msg: '勒紧止血带，血总算止住' },
-    '绷带':       { type: 'med',   hp: [5, 15],  msg: '草草缠上绷带' },
-    '创可贴':     { type: 'med',   hp: [3, 8],   msg: '贴了张创可贴，聊胜于无' },
-    '止痛药':     { type: 'med',   hp: [3, 8], san: [2, 5], msg: '吞下止痛药，疼意退潮' },
-    '吗啡':       { type: 'med',   hp: [5, 12], san: [5, 10], msg: '吗啡推进血管，世界柔软下来' },
+    '急救包':     { type: 'med',   hp: [20, 40], treats: { bleeding: 2, fracture: 1 }, msg: '你仔细清创、上药、包扎' },
+    '止血带':     { type: 'med',   hp: [8, 15], treats: { bleeding: 3 }, msg: '勒紧止血带，血总算止住' },
+    '绷带':       { type: 'med',   hp: [5, 15], treats: { bleeding: 1 }, msg: '草草缠上绷带' },
+    '创可贴':     { type: 'med',   hp: [3, 8], treats: { bleeding: 1 }, msg: '贴了张创可贴，聊胜于无' },
+    '止痛药':     { type: 'med',   hp: [3, 8], san: [2, 5], treats: { fracture: 1 }, msg: '吞下止痛药，疼意退潮' },
+    '吗啡':       { type: 'med',   hp: [5, 12], san: [5, 10], treats: { fracture: 2 }, msg: '吗啡推进血管，世界柔软下来' },
     // 抗感染
-    '抗生素':     { type: 'cure',     msg: '吞下抗生素，压住体内的躁动' },
-    '消毒剂':     { type: 'disinfect', msg: '你用消毒剂灼烧伤口，疼得眼前发白' },
+    '抗生素':     { type: 'cure', treats: { fever: 2 }, msg: '吞下抗生素，压住体内的躁动' },
+    '消毒剂':     { type: 'disinfect', treats: { fever: 1 }, msg: '你用消毒剂灼烧伤口，疼得眼前发白' },
     // 精神
     '抗抑郁药':   { type: 'antidep', san: [10, 20], msg: '药片压下翻涌的念头' },
   },
 
+  /* ---- 据点加工配方：安全消耗行动力，把低级食水变成更可靠的补给 ---- */
+  PROCESS_RECIPES: [
+    { id: 'purify-water', name: '净化雨水', needs: ['雨水'], attr: 'int', difficulty: 10, gains: ['瓶装水'], bonusGain: '瓶装水', desc: '把雨水烧开过滤，变成更可靠的饮水。' },
+    { id: 'cook-noodles', name: '煮泡面', needs: ['泡面'], needAny: [{ label: '一份饮水', items: ['雨水', '半瓶矿泉水', '矿泉水', '瓶装水'] }], attr: 'int', difficulty: 5, gains: ['热泡面'], desc: '消耗泡面和一份水，做成更顶饿的热食。' },
+    { id: 'cook-raw', name: '处理腐肉', needs: ['腐肉'], optional: ['盐'], attr: 'per', difficulty: -5, gains: ['熟肉'], failDeltas: { infection: 4 }, desc: '冒险处理腐肉；有盐会更稳，没有盐也能硬做。' },
+    { id: 'warm-drink', name: '热饮安神', needs: ['巧克力'], needAny: [{ label: '一份饮水', items: ['雨水', '半瓶矿泉水', '矿泉水', '瓶装水'] }], attr: 'int', difficulty: 8, gains: ['热饮'], desc: '把一点甜味和热水留给精神快断线的时候。' },
+  ],
   /* ---- 周末随机事件（好坏各半） ---- */
   EVENTS: [
-    { id: 'rainstorm',  good: false, title: '暴雨倾盆',     text: '连日暴雨灌进据点，物资受潮，饮水却得到补充。', effect: { hunger: -3 }, gain: ['雨水(可饮)'] },
+    { id: 'rainstorm',  good: false, title: '暴雨倾盆',     text: '连日暴雨灌进据点，物资受潮，饮水却得到补充。', effect: { hunger: -3, hydration: 12 }, gain: ['雨水(可饮)'] },
     { id: 'horde_far',  good: false, title: '尸群迁徙(远处)', text: '远处传来海潮般的呻吟，尸群沿主干道涌过，未发现你的据点。', effect: { san: -5 } },
     { id: 'horde_near', good: false, title: '尸群迁徙(近处)', text: '尸群擦着据点外墙而过，你屏住呼吸度过了最漫长的一夜。', effect: { san: -12, hp: -3 } },
     { id: 'quake',      good: false, title: '地震',         text: '大地震颤，庇护所出现裂缝，你被坠物砸中。', effect: { hp: -10, san: -6 } },
-    { id: 'wildfire',   good: false, title: '野火蔓延',     text: '城东燃起大火，浓烟蔽日，你不得不彻夜警戒。', effect: { san: -8, hunger: -4 } },
-    { id: 'coldsnap',   good: false, title: '极寒突袭',     text: '气温骤降，没有足够燃料，你蜷缩着发抖。', effect: { hp: -6, hunger: -6 } },
+    { id: 'wildfire',   good: false, title: '野火蔓延',     text: '城东燃起大火，浓烟蔽日，你不得不彻夜警戒。', effect: { san: -8, hunger: -4, hydration: -5 } },
+    { id: 'coldsnap',   good: false, title: '极寒突袭',     text: '气温骤降，没有足够燃料，你蜷缩着发抖。', effect: { hp: -6, hunger: -5, hydration: -3 } },
     { id: 'traitor',    good: false, title: '叛徒告密',     text: '附近势力似乎得知了你的位置，空气里多了一丝杀机。', effect: { san: -10 } },
     { id: 'cropdmg',    good: false, title: '作物受损',     text: '你勉强种下的菜苗被啃食殆尽。', effect: { hunger: -5 } },
     { id: 'nightmare',  good: false, title: '噩梦缠身',     text: '你梦见所有人死去的样子，惊醒时浑身冷汗。', effect: { san: -8 } },
-    { id: 'flu',        good: false, title: '流感传染',     text: '低烧、咳嗽——在末世，普通的病也可能要命。', effect: { hp: -5, hunger: -4 } },
+    { id: 'flu',        good: false, title: '流感传染',     text: '低烧、咳嗽——在末世，普通的病也可能要命。', effect: { hp: -5, hunger: -3, hydration: -4 } },
 
     { id: 'stranger',   good: true,  title: '流浪者叩门',   text: '一个疲惫的幸存者敲响你的门，神色复杂，似乎想交易些什么。', meet: true },
     { id: 'caravan',    good: true,  title: '贸易车队路过', text: '一支武装贸易车队短暂停留，愿意以物易物。', trade: true },
     { id: 'diary',      good: true,  title: '遗留日记',     text: '你在墙缝里翻出一本日记，记载着附近一处未被搜刮的藏匿点。', gain: ['泛黄的日记', '藏匿点线索'] },
     { id: 'supply',     good: true,  title: '意外之物',     text: '雨水冲出一只半埋的行李箱，里面有干净的补给。', gain: ['压缩饼干×2', '抗生素', '瓶装水'] },
-    { id: 'harvest',    good: true,  title: '收获季',       text: '你照料的角落竟结出果实，难得的新鲜食物。', effect: { hunger: 20, san: 5 } },
+    { id: 'harvest',    good: true,  title: '收获季',       text: '你照料的角落竟结出果实，难得的新鲜食物。', effect: { hunger: 20, hydration: 4, san: 5 } },
     { id: 'goodsleep',  good: true,  title: '难得安眠',     text: '罕见的平静夜晚，你睡了几个月来最沉的一觉。', effect: { hp: 10, san: 10 } },
   ],
 
@@ -162,15 +180,16 @@ const GameData = {
       basement_photo: { name: '地下冷库照片', locations: ['医院', '仓库', '研究'], weight: 1, text: '照片背面写着“二号门后不要留活物”，落款是旧警戒线。' },
     },
   },
-  /* ---- 11 种周内行动（每个耗 1 行动力） ---- */
+  /* ---- 12 种周内行动（每个耗 1 行动力） ---- */
   ACTIONS: [
     { id: 'scavenge', name: '寻找物资', need: 'per',  desc: '搜索某地点，感知定收获、幸运定意外。可能遭遇丧尸或敌对者。', pickLocation: true },
     { id: 'fortify',  name: '修缮庇护所', need: 'str', alt: 'int', desc: '加固据点，降低夜袭概率、改善睡眠(San恢复+)。' },
     { id: 'train',    name: '训练属性',  need: null, desc: '专项训练某属性，永久+1~3，消耗2份口粮与水。魅力/幸运不可练。', pickTrainAttr: true },
     { id: 'craft',    name: '制造/改装', need: 'int', alt: 'str', desc: '用材料制作或升级近战/远程武器、护甲。失败浪费材料。' },
+    { id: 'process',  name: '加工补给', need: 'int', alt: 'per', desc: '在据点做饭、净水、处理食物，低风险但会消耗材料。', pickProcess: true },
     { id: 'clear',    name: '清理丧尸',  need: 'str', combo: 'agi', desc: '主动清剿据点附近尸群，降威胁、得材料，可能重伤。', pickClearLocation: true },
     { id: 'recruit',  name: '交流/招募', need: 'chm', alt: 'elo', desc: '前往某片区域接触幸存者或势力，建立关系或招募。失败可能引发冲突。', pickLocation: true },
-    { id: 'rest',     name: '深度休整',  need: null, desc: '完全休息一天。生命+15，San+10，饱腹消耗减半，无风险。' },
+    { id: 'rest',     name: '深度休整',  need: null, desc: '完全休息一天。生命+15，San+10，饱腹与水分消耗减半，无风险。' },
     { id: 'research', name: '研究/阅读', need: 'int', desc: '翻阅书籍笔记地图，解锁配方/情报，或提升智力感知。' },
     { id: 'chat',     name: '队友闲聊',  need: null, desc: '与队友非功利互动，提好感、双方San+5~10、得短暂Buff。需有队友。' },
     { id: 'pray',     name: '祈祷/冥想', need: null, desc: '精神调适，San+10~20，得短暂Buff(如本周San消耗减半)。' },
@@ -191,9 +210,10 @@ const GameData = {
 
   /* ---- 数值分级修正：返回各判定的百分比修正 ---- */
   // 输入当前 vitals，输出 { str: -0.4, int: -0.1, ... , combat: -0.15, fear: +0.1 }
-  modifiers(v) {
+  modifiers(v, injuries = {}) {
     const m = { str: 0, agi: 0, int: 0, per: 0, elo: 0, luck: 0, chm: 0, combat: 0, fear: 0 };
-    const hp = v.hp, hu = v.hunger, sa = v.san, inf = v.infection;
+    const hp = v.hp, hu = v.hunger, hy = Number.isFinite(+v.hydration) ? +v.hydration : 100, sa = v.san, inf = v.infection;
+    const bleeding = injuries.bleeding || 0, fracture = injuries.fracture || 0, fever = injuries.fever || 0;
     // 生命值
     if (hp <= 79 && hp >= 50) m.combat -= 0.05;
     else if (hp <= 49 && hp >= 20) m.combat -= 0.15;
@@ -201,11 +221,18 @@ const GameData = {
     // 饱腹度
     if (hu <= 49 && hu >= 20) m.int -= 0.10;
     else if (hu <= 19 && hu >= 1) { m.str -= 0.40; m.agi -= 0.30; }
+    // 水分
+    if (hy <= 49 && hy >= 20) { m.per -= 0.10; m.agi -= 0.05; }
+    else if (hy <= 19 && hy >= 1) { m.per -= 0.35; m.agi -= 0.25; m.str -= 0.20; }
     // San值
     if (sa >= 80) m.fear += 0.10;
     else if (sa <= 79 && sa >= 50) m.per -= 0.05;
     else if (sa <= 49 && sa >= 20) m.elo -= 0.20;
     else if (sa <= 19 && sa >= 1) { m.int -= 0.50; m.per -= 0.40; }
+    // 持续伤势
+    if (bleeding > 0) { m.str -= 0.06 * bleeding; m.agi -= 0.04 * bleeding; }
+    if (fracture > 0) { m.str -= 0.12 * fracture; m.agi -= 0.10 * fracture; }
+    if (fever > 0) { m.int -= 0.10 * fever; m.per -= 0.08 * fever; }
     // 感染度
     if (inf >= 31 && inf <= 60) m.per -= 0.10;
     else if (inf >= 61) m.int -= 0.40;
@@ -221,6 +248,10 @@ const GameData = {
     if (key === 'hunger') {
       if (val >= 80) return '充盈'; if (val >= 50) return '正常';
       if (val >= 20) return '饥饿'; if (val >= 1) return '虚脱'; return '饿死';
+    }
+    if (key === 'hydration') {
+      if (val >= 80) return '充足'; if (val >= 50) return '正常';
+      if (val >= 20) return '口渴'; if (val >= 1) return '脱水'; return '渴死';
     }
     if (key === 'san') {
       if (val >= 80) return '坚定'; if (val >= 50) return '紧张';
@@ -254,6 +285,6 @@ const GameData = {
 \`\`\`json
 {"items_gained":["绷带","半瓶水"],"items_lost":["燃烧瓶"],"relations":{"卫军":8}}
 \`\`\`
-规则：① 只在确有变化时才写，没有就别加这个块；② 内容必须与你写的叙事一致、幅度克制(好感单次 ±1~15)；③ 绝不要写生命/饱腹/San/感染/属性等数值——那些一律由程序裁定，你写了也会被忽略；④ JSON 放在最后且必须合法。`;
+规则：① 只在确有变化时才写，没有就别加这个块；② 内容必须与你写的叙事一致、幅度克制(好感单次 ±1~15)；③ 绝不要写生命/饱腹/水分/San/感染/属性等数值——那些一律由程序裁定，你写了也会被忽略；④ JSON 放在最后且必须合法。`;
   },
 };

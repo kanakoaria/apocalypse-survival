@@ -534,14 +534,14 @@ const Engine = {
       period, day: periodDay,
       week: 1, ap: 4,                       // 每周 4 行动力
       attrs,
-      vitals: { hp: 100, hunger: 100, san: 100, infection: 0 },
+      vitals: { hp: 100, hunger: 100, hydration: 100, san: 100, infection: 0 },
       hpCap: 100,                           // 感染会压低生命上限
       inventory: this.expandStacks([...prof.items, '背包']),  // 携带（受背包容量限制）
       warehouse: [],                        // 庇护所仓库（容量大，需在据点存取）
       companions: [],                       // {name, profession, faction, personality, fear, stress, wound, affinity}
       relations: {},                        // npcName -> affinity(-100..100)
       buffs: [],                            // {name, desc, expireWeek}
-      flags: { antidepCount: 0, locationThreats: this.initLocationThreats(), routes: this.initRoutes(), factions: this.initFactions(), story: this.initStory() },
+      flags: { antidepCount: 0, injuries: this.initInjuries(), locationThreats: this.initLocationThreats(), routes: this.initRoutes(), factions: this.initFactions(), story: this.initStory() },
       log: [],                              // 机制日志（给叙事器/调试）
       over: false, overReason: '',
     };
@@ -552,7 +552,7 @@ const Engine = {
   // 返回 { roll, target, success, tier, margin }
   judge(attrKey, difficulty = 0) {
     const s = this.state;
-    const mod = GameData.modifiers(s.vitals);
+    const mod = GameData.modifiers(s.vitals, this.ensureInjuries());
     let target = s.attrs[attrKey] || 30;
     target = target * (1 + (mod[attrKey] || 0));     // 分级百分比修正
     target += difficulty;                            // 正=更易，负=更难
@@ -576,7 +576,10 @@ const Engine = {
     for (const k in delta) {
       if (k === 'infection') v.infection = this.clamp(v.infection + delta[k], 0, 100);
       else if (k === 'hp')   v.hp = this.clamp(v.hp + delta[k], 0, s.hpCap);
-      else                   v[k] = this.clamp(v[k] + delta[k], 0, 100);
+      else {
+        const cur = Number.isFinite(+v[k]) ? +v[k] : 100;
+        v[k] = this.clamp(cur + delta[k], 0, 100);
+      }
     }
     this.checkDeath();
   },
@@ -610,6 +613,143 @@ const Engine = {
     i = this.state.warehouse.findIndex(x => x.startsWith(name));
     if (i >= 0) return this.state.warehouse.splice(i, 1)[0];
     return null;
+  },
+  hasAnyItem(names) { return (names || []).some(n => this.hasItem(n)); },
+  removeAnyItem(names) {
+    for (const n of names || []) {
+      const item = this.removeItem(n);
+      if (item) return item;
+    }
+    return null;
+  },
+  processRecipe(id) { return (GameData.PROCESS_RECIPES || []).find(r => r.id === id) || null; },
+  processMissing(recipeOrId) {
+    const recipe = typeof recipeOrId === 'string' ? this.processRecipe(recipeOrId) : recipeOrId;
+    if (!recipe) return ['未知配方'];
+    const missing = [];
+    for (const n of recipe.needs || []) if (!this.hasItem(n)) missing.push(n);
+    for (const g of recipe.needAny || []) if (!this.hasAnyItem(g.items)) missing.push(g.label || '任一材料');
+    return missing;
+  },
+  availableProcessRecipes() {
+    return (GameData.PROCESS_RECIPES || []).filter(r => this.processMissing(r).length === 0);
+  },
+  consumeProcessRecipe(recipe) {
+    const consumed = [];
+    for (const n of recipe.needs || []) {
+      const item = this.removeItem(n);
+      if (item) consumed.push(item);
+    }
+    for (const g of recipe.needAny || []) {
+      const item = this.removeAnyItem(g.items || []);
+      if (item) consumed.push(item);
+    }
+    for (const n of recipe.optional || []) {
+      const item = this.removeItem(n);
+      if (item) consumed.push(item);
+    }
+    return consumed;
+  },
+
+  /* ---------- 主角持续伤势：流血 / 骨折 / 发烧 ---------- */
+  initInjuries() { return { bleeding: 0, fracture: 0, fever: 0 }; },
+  ensureInjuries() {
+    if (!this.state.flags) this.state.flags = {};
+    if (!this.state.flags.injuries) this.state.flags.injuries = this.initInjuries();
+    const inj = this.state.flags.injuries;
+    for (const key of Object.keys(GameData.INJURIES || {})) {
+      inj[key] = this.clamp(Math.round(+inj[key] || 0), 0, 3);
+    }
+    return inj;
+  },
+  injuryName(type) { return GameData.INJURIES[type] ? GameData.INJURIES[type].name : type; },
+  injuryLevelName(type, value = null) {
+    const def = GameData.INJURIES[type];
+    const v = value == null ? this.ensureInjuries()[type] : value;
+    if (!def || v <= 0) return '无';
+    return def.levels[this.clamp(v, 1, 3) - 1] || def.name;
+  },
+  injuryIntel() {
+    const inj = this.ensureInjuries();
+    return Object.keys(GameData.INJURIES || {}).map(type => ({
+      type,
+      name: this.injuryName(type),
+      value: inj[type] || 0,
+      level: this.injuryLevelName(type),
+      desc: GameData.INJURIES[type].desc || '',
+    })).filter(x => x.value > 0);
+  },
+  hasActiveInjury() { return this.injuryIntel().length > 0; },
+  addInjury(type, amount = 1, res = null, reason = '') {
+    const inj = this.ensureInjuries();
+    if (!(type in inj)) return null;
+    const before = inj[type];
+    inj[type] = this.clamp(before + amount, 0, 3);
+    if (res && inj[type] !== before) {
+      const change = { type, name: this.injuryName(type), before, after: inj[type], delta: inj[type] - before, reason };
+      res.injuryChanges = [...(res.injuryChanges || []), change];
+      res.parts.push(`伤势：${change.name} ${this.injuryLevelName(type, before)}→${this.injuryLevelName(type, inj[type])}${reason ? '（' + reason + '）' : ''}`);
+    }
+    return inj[type] - before;
+  },
+  treatInjury(type, amount = 1, res = null, reason = '') {
+    const inj = this.ensureInjuries();
+    if (!(type in inj)) return null;
+    const before = inj[type];
+    inj[type] = this.clamp(before - amount, 0, 3);
+    if (res && inj[type] !== before) {
+      const change = { type, name: this.injuryName(type), before, after: inj[type], delta: inj[type] - before, reason };
+      res.injuryChanges = [...(res.injuryChanges || []), change];
+      res.parts.push(`处理伤势：${change.name} ${this.injuryLevelName(type, before)}→${this.injuryLevelName(type, inj[type])}${reason ? '（' + reason + '）' : ''}`);
+    }
+    return before - inj[type];
+  },
+  applyItemTreatment(eff) {
+    const treated = [];
+    const inj = this.ensureInjuries();
+    for (const [type, amount] of Object.entries(eff.treats || {})) {
+      const before = inj[type] || 0;
+      if (before <= 0) continue;
+      inj[type] = this.clamp(before - amount, 0, 3);
+      if (inj[type] !== before) treated.push(`${this.injuryName(type)}${this.injuryLevelName(type, before)}→${this.injuryLevelName(type, inj[type])}`);
+    }
+    return treated;
+  },
+  applyTrauma(res, actionId) {
+    if (!res || !res.deltas) return;
+    const hpLoss = Math.max(0, -(res.deltas.hp || 0));
+    const infGain = Math.max(0, res.deltas.infection || 0);
+    if (hpLoss >= 8 && this.rnd() < (hpLoss >= 18 ? 0.85 : 0.45)) {
+      this.addInjury('bleeding', hpLoss >= 20 ? 2 : 1, res, '伤口未稳');
+    }
+    if (hpLoss >= 14 && (actionId === 'clear' || actionId === 'scavenge' || this.rnd() < 0.35)) {
+      this.addInjury('fracture', hpLoss >= 24 ? 2 : 1, res, '撞击扭伤');
+    }
+    if (infGain > 0 && this.rnd() < (infGain >= 30 ? 0.80 : 0.45)) {
+      this.addInjury('fever', infGain >= 30 ? 2 : 1, res, '感染反应');
+    }
+  },
+  applyInjuryUpkeep(res) {
+    const inj = this.ensureInjuries();
+    if (inj.bleeding > 0) {
+      const loss = inj.bleeding * 4;
+      res.deltas.hp = (res.deltas.hp || 0) - loss;
+      res.parts.push(`流血未止，生命 -${loss}`);
+    }
+    if (inj.fracture > 0) {
+      const sanLoss = inj.fracture * 2;
+      res.deltas.san = (res.deltas.san || 0) - sanLoss;
+      res.parts.push(`骨伤拖累行动，San -${sanLoss}`);
+      if (this.rnd() < 0.18) this.treatInjury('fracture', 1, res, '慢慢恢复');
+    }
+    if (inj.fever > 0) {
+      const waterLoss = inj.fever * 4;
+      const hpLoss = inj.fever * 2;
+      res.deltas.hydration = (res.deltas.hydration || 0) - waterLoss;
+      res.deltas.hp = (res.deltas.hp || 0) - hpLoss;
+      res.parts.push(`发烧耗干体力，水分 -${waterLoss}，生命 -${hpLoss}`);
+      if (this.rnd() < 0.16) this.treatInjury('fever', 1, res, '体温回落');
+    }
   },
 
   /* ---------- 队友深度：性格、恐惧、压力、伤势、忠诚 ---------- */
@@ -686,7 +826,7 @@ const Engine = {
   applyCompanionAction(actionId, res) {
     const comps = this.ensureCompanions();
     if (!comps.length || this.state.over) return;
-    const danger = { scavenge: 7, clear: 13, recruit: 4, craft: 2, fortify: 2, train: 1, research: 1, free: 5 }[actionId] || 0;
+    const danger = { scavenge: 7, clear: 13, recruit: 4, craft: 2, process: 1, fortify: 2, train: 1, research: 1, free: 5 }[actionId] || 0;
     if (danger > 0) {
       for (const c of comps) {
         const p = this.companionPersonality(c.personality);
@@ -752,6 +892,7 @@ const Engine = {
     const rng = (a) => Array.isArray(a) ? this.randInt(a[0], a[1]) : a;
     if (eff.hp) deltas.hp = rng(eff.hp);
     if (eff.hunger) deltas.hunger = rng(eff.hunger);
+    if (eff.hydration) deltas.hydration = rng(eff.hydration);
     if (eff.san) deltas.san = rng(eff.san);
     if (eff.infection) deltas.infection = rng(eff.infection);
 
@@ -775,8 +916,10 @@ const Engine = {
       extra = '（入口就知道坏了，肚子翻江倒海）';
     }
 
+    const treated = this.applyItemTreatment(eff);
+    if (treated.length) extra += `（${treated.join('，')}）`;
     this.applyVitals(deltas);
-    return { ok: true, item: name, msg: (eff.msg || `使用了${name}`) + extra, deltas };
+    return { ok: true, item: name, msg: (eff.msg || `使用了${name}`) + extra, deltas, treated };
   },
 
   _effectFor(name) {
@@ -788,7 +931,7 @@ const Engine = {
 
   /* ---------- AI 叙事增量：只接受「物品 / 关系」，绝不含生存数值与属性 ----------
    * 这是 AI 模式下的涌现剧情通道：LLM 声明它在叙事里实际发生的物品增减、NPC 好感变化，
-   * 引擎在此校验并 clamp 后落地。hp/hunger/san/infection/attrs 等键即使出现也一律忽略——
+   * 引擎在此校验并 clamp 后落地。hp/hunger/hydration/san/infection/attrs 等键即使出现也一律忽略——
    * 那些永远由引擎裁定，杜绝作弊与数字漂移。 */
   applyAIDelta(delta) {
     if (!delta || typeof delta !== 'object') return null;
@@ -833,8 +976,9 @@ const Engine = {
 
     const res = { action: def.name, actionId, parts: [], deltas: {}, gains: [], losses: [], meet: null };
 
-    // 通用：每次行动消耗饱腹。吃饭/喝水不走行动判定，由物品使用单独处理。
-    let hungerCost = 3;
+    // 通用：每次行动消耗饱腹与水分。吃饭/喝水不走行动判定，由物品使用单独处理。
+    let hungerCost = 2;
+    let hydrationCost = 3;
 
     switch (actionId) {
       case 'scavenge': {
@@ -913,12 +1057,52 @@ const Engine = {
         const j = this.judge('int', 5);
         const gain = j.tier === 'crit' ? 3 : j.success ? 2 : 1;
         s.attrs[a] = this.clamp(s.attrs[a] + gain, 1, 100);
-        hungerCost += 6; // 额外消耗口粮
+        hungerCost += 5; // 额外消耗口粮
+        hydrationCost += 4; // 训练也会消耗水分
         this.removeItem('罐头') || this.removeItem('压缩饼干') || this.removeItem('能量棒');
         res.parts.push(`${attrName(a)} 永久 +${gain}（消耗口粮与水）`);
         break;
       }
 
+      case 'process': {
+        let recipe = this.processRecipe(opt.recipeId);
+        if (!recipe) recipe = this.availableProcessRecipes()[0];
+        if (!recipe) return { error: '没有可加工的补给材料。可以先去找水、泡面、巧克力或其他食材。' };
+        const missing = this.processMissing(recipe);
+        if (missing.length) return { error: `缺少材料：${missing.join('、')}` };
+
+        const consumed = this.consumeProcessRecipe(recipe);
+        const hasSalt = consumed.some(x => x.startsWith('盐'));
+        const difficulty = (recipe.difficulty || 0) + (recipe.id === 'cook-raw' && hasSalt ? 10 : 0);
+        const attr = recipe.attr || 'int';
+        const j = this.judge(attr, difficulty);
+        res.processRecipeId = recipe.id;
+        res.processRecipe = recipe.name;
+        res.parts.push(`加工方案：${recipe.name}`);
+        res.parts.push(`${attrName(attr)}判定：${j.roll}/${j.target} ${tierCN(j.tier)}`);
+        if (consumed.length) {
+          res.losses.push(...consumed);
+          res.parts.push(`消耗：${consumed.join('、')}`);
+        }
+        if (j.success) {
+          res.gains.push(...(recipe.gains || []));
+          if (j.tier === 'crit' && recipe.bonusGain) res.gains.push(recipe.bonusGain);
+          if (recipe.deltas) for (const k in recipe.deltas) res.deltas[k] = (res.deltas[k] || 0) + recipe.deltas[k];
+          res.parts.push(`加工成功：${res.gains.join('、') || '补给状态改善'}`);
+          if (j.tier === 'crit') res.parts.push('手法格外稳，成品比预想更多。');
+        } else {
+          if (recipe.failDeltas) {
+            for (const k in recipe.failDeltas) {
+              const hit = recipe.failDeltas[k] + (j.tier === 'fumble' ? Math.ceil(Math.abs(recipe.failDeltas[k]) / 2) : 0);
+              res.deltas[k] = (res.deltas[k] || 0) + hit;
+            }
+          }
+          res.parts.push(j.tier === 'fumble' ? '加工彻底失败，材料报废，还惹出一点麻烦。' : '加工失败，材料没能救回来。');
+        }
+        hungerCost = 1;
+        hydrationCost = 1;
+        break;
+      }
       case 'craft': {
         const j = this.judge(s.attrs.int >= s.attrs.str ? 'int' : 'str');
         res.parts.push(`制造判定：${j.roll}/${j.target} ${tierCN(j.tier)}`);
@@ -1026,8 +1210,12 @@ const Engine = {
       case 'rest': {
         if ((s.flags.threat || 2) >= 4) { res.parts.push('据点不安全，无法安心休整。'); }
         res.deltas.hp = 15; res.deltas.san = 10;
+        this.treatInjury('bleeding', 1, res, '休整包扎');
+        if (this.rnd() < 0.55) this.treatInjury('fever', 1, res, '退烧休息');
+        if (this.rnd() < 0.35) this.treatInjury('fracture', 1, res, '固定休养');
         hungerCost = Math.floor(hungerCost / 2); // 饱腹消耗减半
-        res.parts.push('深度休整：生命 +15、San +10、饱腹消耗减半。');
+        hydrationCost = Math.floor(hydrationCost / 2); // 水分消耗减半
+        res.parts.push('深度休整：生命 +15、San +10，轻微处理持续伤势，饱腹与水分消耗减半。');
         break;
       }
 
@@ -1098,7 +1286,9 @@ const Engine = {
     }
 
     // 结算饱腹消耗 + 应用数值变化
+    this.applyTrauma(res, actionId);
     res.deltas.hunger = (res.deltas.hunger || 0) - hungerCost;
+    res.deltas.hydration = (res.deltas.hydration || 0) - hydrationCost;
     const stashed = this.addItem(...res.gains);
     if (stashed.length) res.parts.push(`背包已满，${stashed.join('、')}暂存据点仓库`);
     this.applyVitals(res.deltas);
@@ -1122,13 +1312,18 @@ const Engine = {
     if (ev.meet) out.meet = this.genNPC();
     this.applyEventThreat(ev, out);
     this.applyStoryPulse(out, ev);
-    // 基础代谢：-10/周，避免饱腹在正常游玩中过快见底
-    out.deltas.hunger = (out.deltas.hunger || 0) - 10;
+    // 基础代谢：食物 -8/周，水分 -12/周；水比食物更急，但不再挤占饱腹。
+    out.deltas.hunger = (out.deltas.hunger || 0) - 8;
+    out.deltas.hydration = (out.deltas.hydration || 0) - 12;
     // 感染恶化（无血清，缓慢上升）；本周用过抗生素则压制
     const suppressed = s.flags.suppressInfection === s.week;
     if (!suppressed && s.vitals.infection > 0 && s.vitals.infection < 91)
       out.deltas.infection = (out.deltas.infection || 0) + this.randInt(2, 6);
+    if (suppressed) this.treatInjury('fever', 1, out, '抗生素压制');
+    else if (s.vitals.infection >= 31 && this.rnd() < 0.35) this.addInjury('fever', 1, out, '感染升温');
     s.flags.suppressInfection = null;
+
+    this.applyInjuryUpkeep(out);
 
     // 凶险事件可能夺走队友，也会加重压力
     if (ev.good === false && s.companions.length) {
@@ -1157,6 +1352,7 @@ const Engine = {
     if (s.over) return;
     if (v.hp <= 0) this.gameOver('生命归零，你倒在了青阳市的废墟里。');
     else if (v.hunger <= 0) this.gameOver('饥饿吞噬了你，再没能站起来。');
+    else if (v.hydration <= 0) this.gameOver('脱水榨干了最后一点力气，你没能再睁开眼。');
     else if (v.san <= 0) this.gameOver('精神彻底崩溃，你成了又一个青阳市的疯子。');
     else if (v.infection >= 100) this.gameOver('体温升到顶点，你的瞳孔浑浊下去——你转化了。');
   },
@@ -1273,7 +1469,13 @@ const Engine = {
     this._seed = o.seed || 1;
     this.state = o.state;
     if (!this.state.warehouse) this.state.warehouse = [];     // 旧档兼容
+    if (!this.state.vitals) this.state.vitals = { hp: 100, hunger: 100, hydration: 100, san: 100, infection: 0 };
+    if (!Number.isFinite(+this.state.vitals.hydration)) {
+      const h = Number.isFinite(+this.state.vitals.hunger) ? +this.state.vitals.hunger : 100;
+      this.state.vitals.hydration = this.clamp(Math.max(55, h), 0, 100);
+    }
     if (!this.state.flags) this.state.flags = {};
+    this.ensureInjuries();
     this.ensureLocationThreats();
     this.ensureRoutes();
     this.ensureFactions();
