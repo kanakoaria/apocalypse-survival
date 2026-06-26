@@ -833,8 +833,8 @@ const Engine = {
 
     const res = { action: def.name, actionId, parts: [], deltas: {}, gains: [], losses: [], meet: null };
 
-    // 通用：每次行动消耗饱腹（设定：每点行动力额外扣 5 饱食度）
-    let hungerCost = 5;
+    // 通用：每次行动消耗饱腹。吃饭/喝水不走行动判定，由物品使用单独处理。
+    let hungerCost = 3;
 
     switch (actionId) {
       case 'scavenge': {
@@ -913,7 +913,7 @@ const Engine = {
         const j = this.judge('int', 5);
         const gain = j.tier === 'crit' ? 3 : j.success ? 2 : 1;
         s.attrs[a] = this.clamp(s.attrs[a] + gain, 1, 100);
-        hungerCost += 10; // 额外消耗口粮
+        hungerCost += 6; // 额外消耗口粮
         this.removeItem('罐头') || this.removeItem('压缩饼干') || this.removeItem('能量棒');
         res.parts.push(`${attrName(a)} 永久 +${gain}（消耗口粮与水）`);
         break;
@@ -1122,8 +1122,8 @@ const Engine = {
     if (ev.meet) out.meet = this.genNPC();
     this.applyEventThreat(ev, out);
     this.applyStoryPulse(out, ev);
-    // 基础代谢：-15/周
-    out.deltas.hunger = (out.deltas.hunger || 0) - 15;
+    // 基础代谢：-10/周，避免饱腹在正常游玩中过快见底
+    out.deltas.hunger = (out.deltas.hunger || 0) - 10;
     // 感染恶化（无血清，缓慢上升）；本周用过抗生素则压制
     const suppressed = s.flags.suppressInfection === s.week;
     if (!suppressed && s.vitals.infection > 0 && s.vitals.infection < 91)

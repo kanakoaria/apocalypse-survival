@@ -203,13 +203,30 @@ const UI = {
       .find(a => t.includes(a.name) || new RegExp(`练.{0,2}${a.name[0]}`).test(t))?.key || null;
   },
 
+  wantsForageCommand(text) {
+    return /找|寻找|搜|搜刮|翻找|觅食|采集|接雨|过滤|烧水|探索/.test(String(text || ''));
+  },
+
+  wantsDrinkCommand(text) {
+    const t = String(text || '');
+    if (this.wantsForageCommand(t)) return false;
+    return /喝水|饮水|补水|喝点|喝一口|喝.*(矿泉水|瓶装水|雨水|水)/.test(t);
+  },
+
+  wantsEatCommand(text) {
+    const t = String(text || '');
+    if (this.wantsForageCommand(t)) return false;
+    return /吃饭|吃东西|吃点|吃些|进食|用餐|开饭|口粮|垫垫|充饥|填肚|做饭|煮饭|烹饪|吃.*(罐头|饼干|干粮|泡面|能量棒|巧克力|食物)/.test(t);
+  },
+
   routeTypedCommand(text) {
     const t = String(text || '').trim();
     const loc = this.locationFromText(t);
     const attr = this.trainAttrFromText(t);
     if (/结算|周末/.test(t)) return { kind: 'weekend' };
     if (/处理伤|包扎|伤口|医疗|止血|疗伤/.test(t)) return { kind: 'hint', what: 'med' };
-    if (/吃|进食|口粮|垫垫|喝水|喝点|充饥/.test(t)) return { kind: 'hint', what: 'food' };
+    if (this.wantsDrinkCommand(t)) return { kind: 'hint', what: 'water' };
+    if (this.wantsEatCommand(t)) return { kind: 'hint', what: 'food' };
 
     if (loc && /清理|清剿|肃清|杀|丧尸|尸群/.test(t)) {
       return { kind: 'action', id: 'clear', opt: { location: loc } };
@@ -376,9 +393,9 @@ const UI = {
     log.appendChild(wrap); log.scrollTop = log.scrollHeight;
   },
 
-  // 点「处理伤口 / 吃点东西」→ 自动使用携带里最合适的一件（结果进正文）
+  // 点「处理伤口 / 吃饭 / 喝水」→ 自动使用携带里最合适的一件（不耗行动力，不摇骰）
   autoUse(category) {
-    const want = category === 'med' ? ['med'] : ['food', 'water'];
+    const want = category === 'med' ? ['med'] : category === 'water' ? ['water'] : ['food', 'water'];
     let best = null;
     for (const it of Engine.state.inventory) {
       const eff = Engine._effectFor(it);
@@ -387,7 +404,11 @@ const UI = {
       if (!best || score > best.score) best = { name: it, score };
     }
     if (!best) {
-      const msg = category === 'med' ? '背包里没有医疗物品，可继续选择别的行动。' : '背包里没有食物或水，可继续选择别的行动。';
+      const msg = category === 'med'
+        ? '背包里没有医疗物品，可继续选择别的行动。'
+        : category === 'water'
+          ? '背包里没有水，可继续选择别的行动。'
+          : '背包里没有食物或水，可继续选择别的行动。';
       this.toast(msg);
       this.pushSystem(msg);
       return false;
@@ -400,7 +421,8 @@ const UI = {
     const ap = Engine.state.ap;
     if (ap <= 0 && /结算|周末/.test(t)) return { kind: 'weekend' };
     if (/处理伤|包扎|伤口|医疗|止血|疗伤/.test(t)) return { kind: 'hint', what: 'med' };
-    if (/吃|进食|口粮|垫垫|喝水|喝点|充饥/.test(t)) return { kind: 'hint', what: 'food' };
+    if (this.wantsDrinkCommand(t)) return { kind: 'hint', what: 'water' };
+    if (this.wantsEatCommand(t)) return { kind: 'hint', what: 'food' };
     const map = [
       ['scavenge', /寻找物资|搜刮|找.{0,6}(物资|食物|水|药|补给|吃的)|翻找|搜一?搜|换个?地方|出门搜|出去找|搜物资/],
       ['fortify',  /修缮|加固|庇护所|修补|筑/],

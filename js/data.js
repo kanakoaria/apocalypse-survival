@@ -184,7 +184,7 @@ const GameData = {
     { id: 'repair', name: '修理维护', re: /修|修理|发电|电台|无线电|净水|车|发动|电路|加固/, attrs: ['int', 'per'], difficulty: 0, risk: 0.10, gains: ['零件', '电池', '工具箱'] },
     { id: 'talk', name: '交涉试探', re: /喊|喊话|交涉|谈判|威胁|求助|打听|交易|交换|套话/, attrs: ['elo', 'chm'], difficulty: -3, risk: 0.25, gains: ['情报纸条', '半瓶矿泉水'] },
     { id: 'hide', name: '隐藏绕行', re: /躲|藏|潜行|绕路|避开|埋伏|静观|不出声|屏息/, attrs: ['agi', 'per'], difficulty: 3, risk: 0.08, gains: ['安全路线'] },
-    { id: 'forage', name: '觅食取水', re: /找吃|找水|觅食|采集|烧水|接雨|做饭|煮|过滤|找食物/, attrs: ['per', 'luck'], difficulty: 0, risk: 0.15, gains: ['雨水', '能量棒', '泡面'] },
+    { id: 'forage', name: '觅食取水', re: /找吃|找水|觅食|采集|烧水|接雨|过滤|找食物/, attrs: ['per', 'luck'], difficulty: 0, risk: 0.15, gains: ['雨水', '能量棒', '泡面'] },
     { id: 'organize', name: '整理据点', re: /整理|清点|分类|归置|布置|巡逻|守夜|检查门窗/, attrs: ['int', 'per'], difficulty: 8, risk: 0.06, gains: ['碎布料', '木板'] },
     { id: 'reckless', name: '冒险尝试', re: /.*/, attrs: ['luck'], difficulty: -8, risk: 0.24, gains: ['意外之物'] },
   ],
