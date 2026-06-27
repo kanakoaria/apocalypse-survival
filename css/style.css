@@ -33,9 +33,12 @@ input,textarea{
 button:disabled,.choice:disabled,.choice.disabled,[disabled],[aria-disabled="true"]{
   cursor:url("../assets/cursors/notallowed.png") 12 12, not-allowed;
   cursor:image-set(url("../assets/cursors/notallowed.png") 1x, url("../assets/cursors/notallowed@2x.png") 2x) 12 12, not-allowed}
-body.busy,body.busy *{
-  cursor:url("../assets/cursors/busy.png") 12 12, wait;
-  cursor:image-set(url("../assets/cursors/busy.png") 1x, url("../assets/cursors/busy@2x.png") 2x) 12 12, wait}
+/* 等 AI 输出：隐藏系统光标，换成转动的 overlay（#busy-cursor，JS 跟随鼠标） */
+body.busy,body.busy *{cursor:none}
+#busy-cursor{position:fixed; left:0; top:0; width:40px; height:40px; margin:-20px 0 0 -20px; pointer-events:none; z-index:99999; display:none;
+  background:url("../assets/cursors/busy@2x.png") center/contain no-repeat; animation:cursor-spin .8s linear infinite}
+body.busy #busy-cursor{display:block}
+@keyframes cursor-spin{to{transform:rotate(360deg)}}
 .cursor-target{
   cursor:url("../assets/cursors/target.png") 12 11, crosshair;
   cursor:image-set(url("../assets/cursors/target.png") 1x, url("../assets/cursors/target@2x.png") 2x) 12 11, crosshair}
@@ -254,6 +257,12 @@ button.ghost.wide:hover{background:#1d1813; border-color:var(--rust)}
   cursor:image-set(url("../assets/cursors/target.png") 1x, url("../assets/cursors/target@2x.png") 2x) 12 11, grabbing}
 .m-fig{height:85px; display:flex; align-items:flex-end; justify-content:center}
 .m-fig img{height:85px; width:auto; display:block}
+/* 形象自选 */
+.avatar-pick{display:flex; gap:8px}
+.avatar-opt{display:flex; flex-direction:column; align-items:center; gap:2px; padding:4px 7px; background:#16161a; border:1px solid var(--line); border-radius:5px; color:var(--ink-dim); font-size:11px}
+.avatar-opt img{height:36px; width:auto}
+.avatar-opt:hover{border-color:var(--rust); color:var(--ink)}
+.avatar-opt.on{border-color:var(--blood); color:#fff; background:#1d1418}
 .mascot.ally{animation-delay:.45s; transform:scale(.94)}
 .m-bubble{max-width:86px; min-height:34px; border:1px solid var(--line); background:#101014d9; color:var(--ink-dim); border-radius:4px; padding:4px 6px; text-align:center; font-family:var(--mono); line-height:1.25}
 .m-bubble b{display:block; font-size:10px; color:var(--ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}

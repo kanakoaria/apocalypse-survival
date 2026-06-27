@@ -496,7 +496,7 @@ const UI = {
 
   /* ---------------- 叙事输出 ---------------- */
   async narrate(kind, payload) {
-    this.busy = true; document.body.classList.add('busy');   // 叙事中 → 转圈光标
+    this.busy = true; this.initBusyCursor(); document.body.classList.add('busy');   // 叙事中 → 转动光标
     const wait = this.pushNarr('「……」', { temp: true });
     let out;
     try { out = await Narrator.narrate(kind, payload); }
@@ -686,12 +686,36 @@ const UI = {
     </div>`;
   },
 
+  // 可选形象：玩家在面板里自选主角立绘，队友自动用另一个；以后加角色只要扩这张表 + 丢图
+  MASCOT_CHARS: [{ key: 'aria', name: '亚里亚' }, { key: 'nemo', name: '尼莫' }],
+  heroCharKey() {
+    if (!this.heroChar) { try { this.heroChar = localStorage.getItem('heroChar') || 'aria'; } catch (e) { this.heroChar = 'aria'; } }
+    return this.heroChar;
+  },
+  setHeroChar(key) {
+    this.heroChar = key;
+    try { localStorage.setItem('heroChar', key); } catch (e) {}
+    this.renderPanel();   // 重渲面板刷新高亮，末尾会一并重渲 mascot
+  },
+
+  // 等 AI 输出时的转动光标：隐藏系统光标，一个跟随鼠标的旋转 overlay（body.busy 时显示）
+  initBusyCursor() {
+    if (this._busyCursorInit) return;
+    this._busyCursorInit = true;
+    const el = document.createElement('div');
+    el.id = 'busy-cursor';
+    document.body.appendChild(el);
+    document.addEventListener('mousemove', (e) => { el.style.left = e.clientX + 'px'; el.style.top = e.clientY + 'px'; }, { passive: true });
+  },
+
   renderMascots() {
     const box = this.el('mascots');
     if (!box || !Engine.state) return;
     const m = this.mascotState();
-    m.hero.char = 'aria';
-    if (m.companion) m.companion.char = 'nemo';
+    const hero = this.heroCharKey();
+    const other = (this.MASCOT_CHARS.find(c => c.key !== hero) || { key: 'nemo' }).key;
+    m.hero.char = hero;
+    if (m.companion) m.companion.char = other;
     box.innerHTML = this.mascotHTML(m.hero, 'hero') + (m.companion ? this.mascotHTML(m.companion, 'ally') : '');
     this.initMascotDrag(box);
   },
@@ -817,6 +841,7 @@ const UI = {
         <div class="time">第 <b>${s.week}</b> 周 · 第 ${s.day} 天 · 行动力 <b>${s.ap}</b>/4</div>
       </div>
       <div class="vitals">${GameData.VITALS.map(x => bar(x.key)).join('')}</div>
+      <div class="sec avatar-sec"><h3>形象</h3><div class="avatar-pick">${this.MASCOT_CHARS.map(c => `<button class="avatar-opt${c.key === this.heroCharKey() ? ' on' : ''}" data-char="${c.key}" title="切换形象：${c.name}"><img src="assets/sprites/${c.key}_basic1.png" alt=""><span>${c.name}</span></button>`).join('')}</div></div>
       <div class="sec injury-sec"><h3>持续伤势</h3><div class="injuries">${injuries}</div></div>
       <div class="sec priority-sec"><h3>属性</h3><div class="attrs priority-attrs">${attrs}</div></div>
       <div class="sec priority-sec carry-sec"><h3>携带物品 <span class="dim">(${s.inventory.length}/${Engine.carryCap()})</span></h3>
@@ -849,6 +874,7 @@ const UI = {
     this.el('save-export').onclick = () => this.exportSave();
     this.el('save-import').onclick = () => this.importSave();
     this.el('panel').querySelectorAll('[data-use]').forEach(b => b.onclick = () => this.useCarried(s.inventory[+b.dataset.use]));
+    this.el('panel').querySelectorAll('[data-char]').forEach(b => b.onclick = () => this.setHeroChar(b.dataset.char));
     this.el('panel').querySelectorAll('[data-dep]').forEach(b => b.onclick = () => { Engine.deposit(s.inventory[+b.dataset.dep]); this.renderPanel(); this.autosave(); });
     this.el('panel').querySelectorAll('[data-wd]').forEach(b => b.onclick = () => {
       const name = s.warehouse[+b.dataset.wd];
