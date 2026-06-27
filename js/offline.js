@@ -137,7 +137,7 @@ const OfflineNarrator = {
         t += this.pick([' 一具佝偻的身影从阴影里直起来，浑浊的眼睛转向你。来不及退了。', ' 货架后传来湿哑的咀嚼声——它先发现了你。']);
       else t += this.pick([' 一个活人举着家伙堵在出口，眼神比丧尸更难懂。', ' "把东西放下。"黑暗里有人开口，声音发紧。']);
     }
-    if (r.gains && r.gains.length) t += this.pick([` 翻找半天，你把 ${r.gains.join('、')} 塞进背包。`, ` 还算走运——${r.gains.join('、')} 到手。`]);
+    if (r.gains && r.gains.length) t += this.pick([` 翻找半天，你把 ${r.gains.join('、')} 收好。`, ` 还算走运——${r.gains.join('、')} 到手。`]);
     else t += this.pick(['一无所获，连耗子都比你先到一步。', '空的，全是空的，只有灰尘。']);
     const story = this.storyLine(r); if (story) t += ` ${story}`;
     return t;

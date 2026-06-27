@@ -277,12 +277,25 @@ const UI = {
   /* ---------------- 行动执行 ---------------- */
   async doAction(id, opt) {
     if (this.busy) return;
+    const before = (Engine.state.companions || []).length;
     const res = Engine.runAction(id, opt);
     if (res.error) { this.toast(res.error); this.renderActions(); return; }
     if (opt && opt.sourceText) this.pushPlayer(`“${opt.sourceText}” → ${res.action}${res.location ? '·' + res.location : ''}`);
     else this.pushPlayer(`▷ ${res.action}${res.location ? '·' + res.location : ''}`);
     await this.narrate('action', res);
     this.afterTurn();
+    // 事件手势（叠在状态立绘之上）
+    if (!Engine.state.over) {
+      const after = (Engine.state.companions || []).length;
+      const enemy = res.meet && (res.actionId === 'clear' || res.actionId === 'scavenge');
+      if (after > before) this.playGesture('nemo', 'more1');               // 招到新队友 → 挥手
+      else if (enemy) this.playGesture('aria', 'more4');                   // 遇敌 → 指着喊·警报
+      else if (res.actionId === 'scavenge' && res.gains && res.gains.length) this.playGesture('nemo', 'more3'); // 搜到物资 → 指引
+      else {
+        const g = { clear: ['aria', 'more5'], train: ['aria', 'more3'], process: ['nemo', 'more4'] }[res.actionId];
+        if (g) this.playGesture(g[0], g[1]);                               // 清丧尸→瞄准 / 训练→比V / 加工→端庄
+      }
+    }
   },
 
   async freeCommand() {
@@ -345,6 +358,12 @@ const UI = {
     this.pushDivider(`周末结算 · 第 ${res.week} 周`);
     await this.narrate('weekend', res);
     this.afterTurn();
+    if (!Engine.state.over) {
+      const good = res.event && res.event.good;
+      if (good === true) { this.playGesture('aria', 'more2'); this.playGesture('nemo', 'more5'); }       // 好事：敬礼 + 握拳振奋
+      else if (good === false) { this.playGesture('aria', 'more1'); this.playGesture('nemo', 'more2'); } // 凶事：警戒 + 振作敬礼
+      else { this.playGesture('aria', 'more2'); this.playGesture('nemo', 'more2'); }                     // 平：一起敬礼
+    }
   },
 
   afterTurn() {
@@ -428,7 +447,7 @@ const UI = {
   autoUse(category) {
     const want = category === 'med' ? ['med'] : category === 'water' ? ['water'] : ['food', 'raw'];
     let best = null;
-    for (const it of Engine.state.inventory) {
+    for (const it of [...Engine.state.inventory, ...Engine.state.warehouse]) {  // 背包+仓库一起找
       const eff = Engine._effectFor(it);
       if (!eff || !want.includes(eff.type)) continue;
       const treatScore = Object.values(eff.treats || {}).reduce((sum, n) => sum + n, 0) * 24;
@@ -437,10 +456,10 @@ const UI = {
     }
     if (!best) {
       const msg = category === 'med'
-        ? '背包里没有医疗物品，可继续选择别的行动。'
+        ? '身上和仓库都没有医疗物品，可继续选择别的行动。'
         : category === 'water'
-          ? '背包里没有水，可继续选择别的行动。'
-          : '背包里没有食物，可继续选择别的行动。';
+          ? '身上和仓库都没有水，可继续选择别的行动。'
+          : '身上和仓库都没有食物，可继续选择别的行动。';
       this.toast(msg);
       this.pushSystem(msg);
       return false;
@@ -477,7 +496,7 @@ const UI = {
 
   /* ---------------- 叙事输出 ---------------- */
   async narrate(kind, payload) {
-    this.busy = true;
+    this.busy = true; document.body.classList.add('busy');   // 叙事中 → 转圈光标
     const wait = this.pushNarr('「……」', { temp: true });
     let out;
     try { out = await Narrator.narrate(kind, payload); }
@@ -490,7 +509,7 @@ const UI = {
       const line = this.aiDeltaText(ap);
       if (line) { this.pushSystem(line); this.renderPanel(); this.autosave(); }
     }
-    this.busy = false;
+    this.busy = false; document.body.classList.remove('busy');
   },
 
   aiDeltaText(ap) {
@@ -643,15 +662,27 @@ const UI = {
     return { hero: { name: s.name || '你', role: '主角', mood: heroMood, text: heroText }, companion };
   },
 
+  // mood → 立绘编号（basic1-6 = 正常 / 冷淡 / 受伤 / 感染发烧 / 低落 / 濒死）
+  spriteFor(char, mood) {
+    const map = {
+      steady: 1,
+      hungry: 2, thirsty: 2,
+      hurt: 3, bleeding: 3, fracture: 3,
+      fever: 4, infected: 4,
+      sad: 5, panic: 5, starve: 5, dehydrate: 5,
+      critical: 6,
+    };
+    return `assets/sprites/${char || 'aria'}_basic${map[mood] || 1}.png`;
+  },
+
   mascotHTML(m, extra = '') {
     const name = this.esc(m.name).slice(0, 8);
-    return `<div class="mascot ${extra} mood-${m.mood}" title="${this.esc(m.role)}：${this.esc(m.text)}">
+    const gsrc = this.gestures && this.gestures[m.char];
+    const src = gsrc || this.spriteFor(m.char, m.mood);
+    const moodCls = gsrc ? 'mood-steady' : `mood-${m.mood}`; // 手势期间用标准悬浮，别被摇晃/透明盖掉
+    return `<div class="mascot ${extra} ${moodCls}" title="${this.esc(m.role)}：${this.esc(m.text)}">
       <div class="m-bubble"><b>${name}</b><span>${this.esc(m.text)}</span></div>
-      <div class="m-sprite">
-        <i class="m-hair"></i><i class="m-head"></i><i class="m-eye left"></i><i class="m-eye right"></i><i class="m-mouth"></i>
-        <i class="m-body"></i><i class="m-arm left"></i><i class="m-arm right"></i><i class="m-leg left"></i><i class="m-leg right"></i>
-        <i class="m-heart"></i><i class="m-bandage"></i>
-      </div>
+      <div class="m-fig"><img alt="" src="${src}"></div>
     </div>`;
   },
 
@@ -659,7 +690,54 @@ const UI = {
     const box = this.el('mascots');
     if (!box || !Engine.state) return;
     const m = this.mascotState();
+    m.hero.char = 'aria';
+    if (m.companion) m.companion.char = 'nemo';
     box.innerHTML = this.mascotHTML(m.hero, 'hero') + (m.companion ? this.mascotHTML(m.companion, 'ally') : '');
+    this.initMascotDrag(box);
+  },
+
+  // 让 mascot 可以在界面里拖动（位置记进 localStorage，刷新后保留）
+  initMascotDrag(box) {
+    if (!box || box._dragInit) return;
+    box._dragInit = true;
+    box.style.touchAction = 'none';
+    try {
+      const p = JSON.parse(localStorage.getItem('mascotPos') || 'null');
+      if (p && p.left) { box.style.left = p.left; box.style.top = p.top; box.style.right = 'auto'; box.style.bottom = 'auto'; }
+    } catch (e) {}
+    let drag = null;
+    box.addEventListener('pointerdown', (e) => {
+      if (!e.target.closest('.mascot')) return;           // 只在小人身上才拖
+      const r = box.getBoundingClientRect();
+      drag = { dx: e.clientX - r.left, dy: e.clientY - r.top };
+      try { box.setPointerCapture(e.pointerId); } catch (er) {}
+      box.classList.add('dragging');
+      e.preventDefault();
+    });
+    box.addEventListener('pointermove', (e) => {
+      if (!drag) return;
+      const w = box.offsetWidth, h = box.offsetHeight;
+      const x = Math.max(0, Math.min(window.innerWidth - w, e.clientX - drag.dx));
+      const y = Math.max(0, Math.min(window.innerHeight - h, e.clientY - drag.dy));
+      box.style.left = x + 'px'; box.style.top = y + 'px'; box.style.right = 'auto'; box.style.bottom = 'auto';
+    });
+    const end = () => {
+      if (!drag) return;
+      drag = null; box.classList.remove('dragging');
+      try { localStorage.setItem('mascotPos', JSON.stringify({ left: box.style.left, top: box.style.top })); } catch (e) {}
+    };
+    box.addEventListener('pointerup', end);
+    box.addEventListener('pointercancel', end);
+  },
+
+  // 事件手势：临时把某角色换成 more 动作，几秒后自动回到状态立绘。按角色独立，可主角+队友同时出。
+  gestures: {},
+  playGesture(char, gname, ms = 3000) {
+    this.gestures[char] = `assets/sprites/${char}_${gname}.png`;
+    this._gtimers = this._gtimers || {};
+    if (this._gtimers[char]) clearTimeout(this._gtimers[char]);
+    this._gtimers[char] = setTimeout(() => { delete this.gestures[char]; this.renderMascots(); }, ms);
+    this.renderMascots();
   },
 
   /* ---------------- 状态面板（可交互） ---------------- */

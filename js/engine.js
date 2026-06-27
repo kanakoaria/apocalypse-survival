@@ -885,8 +885,8 @@ const Engine = {
     if (eff.type === 'disinfect' && v.infection >= 61) {
       return { ok: false, msg: '感染已深入骨髓，消毒剂再也压不住了。' };
     }
-    // 取出一件
-    if (!this._take('inventory', name)) return { ok: false, msg: '背包里没有这件物品。' };
+    // 取出一件（背包没有时从据点仓库取，避免「拿到水却喝不上」）
+    if (!this._take('inventory', name) && !this._take('warehouse', name)) return { ok: false, msg: '背包和仓库里都没有这件物品。' };
 
     const deltas = {};
     const rng = (a) => Array.isArray(a) ? this.randInt(a[0], a[1]) : a;

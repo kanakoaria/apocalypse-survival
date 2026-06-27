@@ -21,8 +21,24 @@ body{
 }
 body::after{content:""; position:fixed; inset:0; pointer-events:none; box-shadow:inset 0 0 220px 40px #000a}
 button{font-family:inherit}
-html,body,button,.choice,.act,.ibtn,.sbtn,summary,label,select{cursor:url("../assets/pixel-cursor.svg") 2 2, auto}
-input,textarea{cursor:text}
+/* ---------- 自定义光标（24px + 高分屏 @2x，含 1x 回退） ---------- */
+html,body{cursor:url("../assets/cursors/default.png") 1 1, auto;
+  cursor:image-set(url("../assets/cursors/default.png") 1x, url("../assets/cursors/default@2x.png") 2x) 1 1, auto}
+button,.choice,.act,.ibtn,.sbtn,summary,label,select,a,[role="button"]{
+  cursor:url("../assets/cursors/pointer.png") 8 1, pointer;
+  cursor:image-set(url("../assets/cursors/pointer.png") 1x, url("../assets/cursors/pointer@2x.png") 2x) 8 1, pointer}
+input,textarea{
+  cursor:url("../assets/cursors/text.png") 6 12, text;
+  cursor:image-set(url("../assets/cursors/text.png") 1x, url("../assets/cursors/text@2x.png") 2x) 6 12, text}
+button:disabled,.choice:disabled,.choice.disabled,[disabled],[aria-disabled="true"]{
+  cursor:url("../assets/cursors/notallowed.png") 12 12, not-allowed;
+  cursor:image-set(url("../assets/cursors/notallowed.png") 1x, url("../assets/cursors/notallowed@2x.png") 2x) 12 12, not-allowed}
+body.busy,body.busy *{
+  cursor:url("../assets/cursors/busy.png") 12 12, wait;
+  cursor:image-set(url("../assets/cursors/busy.png") 1x, url("../assets/cursors/busy@2x.png") 2x) 12 12, wait}
+.cursor-target{
+  cursor:url("../assets/cursors/target.png") 12 11, crosshair;
+  cursor:image-set(url("../assets/cursors/target.png") 1x, url("../assets/cursors/target@2x.png") 2x) 12 11, crosshair}
 b{color:#e7e2da} em{font-style:normal}
 .dim{color:var(--ink-dim)} .small{font-size:12px}
 
@@ -230,7 +246,14 @@ button.ghost.wide:hover{background:#1d1813; border-color:var(--rust)}
 
 /* ---------------- Q版状态角色 ---------------- */
 .mascot-layer{position:fixed; right:374px; bottom:126px; z-index:22; display:flex; gap:14px; align-items:flex-end; pointer-events:none}
-.mascot{width:78px; display:flex; flex-direction:column; align-items:center; gap:5px; filter:drop-shadow(0 8px 12px #000a); animation:mascot-bob 2.4s ease-in-out infinite}
+.mascot{width:auto; min-width:60px; display:flex; flex-direction:column; align-items:center; gap:5px; filter:drop-shadow(0 8px 12px #000a); animation:mascot-bob 2.4s ease-in-out infinite; pointer-events:auto;
+  cursor:url("../assets/cursors/pointer.png") 8 1, grab;
+  cursor:image-set(url("../assets/cursors/pointer.png") 1x, url("../assets/cursors/pointer@2x.png") 2x) 8 1, grab}
+.mascot-layer.dragging,.mascot-layer.dragging .mascot{
+  cursor:url("../assets/cursors/target.png") 12 11, grabbing;
+  cursor:image-set(url("../assets/cursors/target.png") 1x, url("../assets/cursors/target@2x.png") 2x) 12 11, grabbing}
+.m-fig{height:85px; display:flex; align-items:flex-end; justify-content:center}
+.m-fig img{height:85px; width:auto; display:block}
 .mascot.ally{animation-delay:.45s; transform:scale(.94)}
 .m-bubble{max-width:86px; min-height:34px; border:1px solid var(--line); background:#101014d9; color:var(--ink-dim); border-radius:4px; padding:4px 6px; text-align:center; font-family:var(--mono); line-height:1.25}
 .m-bubble b{display:block; font-size:10px; color:var(--ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
@@ -255,7 +278,12 @@ button.ghost.wide:hover{background:#1d1813; border-color:var(--rust)}
 .mood-hurt .m-bubble span,.mood-critical .m-bubble span,.mood-bleeding .m-bubble span,.mood-fracture .m-bubble span{color:var(--blood)}
 .mood-bleeding .m-heart,.mood-fracture .m-heart{opacity:.45}
 .mood-sad .m-mouth,.mood-panic .m-mouth{height:5px; border-radius:6px 6px 0 0; background:#33486a}
-.mood-panic,.mood-critical{animation:mascot-shake .42s steps(2,end) infinite}
+/* —— 每状态不同的待机动作 —— */
+.mood-hurt,.mood-bleeding,.mood-fracture{animation:mascot-bob-hurt 1.55s ease-in-out infinite}   /* 挂彩：更快更碎 */
+.mood-fever,.mood-infected{animation:mascot-fever 1s ease-in-out infinite}                       /* 发热：快而浅的颤 */
+.mood-sad,.mood-starve,.mood-dehydrate{animation:mascot-bob-slow 3.8s ease-in-out infinite}      /* 低落：放慢 */
+.mood-panic{animation:mascot-shake .42s steps(2,end) infinite}                                   /* 崩溃边缘：左右摇（最紧急） */
+.mood-critical{animation:mascot-fade 2.6s ease-in-out infinite}                                  /* 濒死：透明度起伏 */
 .mood-fever .m-head,.mood-infected .m-head{background:#d6c7a4}
 .mood-infected .m-heart{background:#7a9a3c}.mood-infected .m-heart::before,.mood-infected .m-heart::after{background:#7a9a3c}
 .mood-hungry .m-sprite,.mood-starve .m-sprite{transform:translateY(3px)}
@@ -266,6 +294,10 @@ button.ghost.wide:hover{background:#1d1813; border-color:var(--rust)}
 @keyframes mascot-wave{0%,100%{transform:rotate(-8deg)}50%{transform:rotate(10deg)}}
 @keyframes mascot-pulse{0%,100%{transform:rotate(45deg) scale(.85)}50%{transform:rotate(45deg) scale(1.15)}}
 @keyframes mascot-shake{0%,100%{transform:translate(0,0)}25%{transform:translate(-2px,1px)}75%{transform:translate(2px,-1px)}}
+@keyframes mascot-bob-hurt{0%,100%{transform:translateY(0)}50%{transform:translateY(-4px)}}
+@keyframes mascot-fever{0%,100%{transform:translateY(0) rotate(-1.5deg)}50%{transform:translateY(-3px) rotate(1.5deg)}}
+@keyframes mascot-bob-slow{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}
+@keyframes mascot-fade{0%,100%{opacity:1; transform:translateY(0)}50%{opacity:.4; transform:translateY(-2px)}}
 @media(max-width:860px){.mascot-layer{right:12px; bottom:118px; gap:8px}.mascot{width:64px; transform:scale(.86); transform-origin:bottom center}.mascot.ally{display:none}}
 /* ---------------- 弹窗 / toast ---------------- */
 .modal{position:fixed; inset:0; background:#000a; display:flex; align-items:center; justify-content:center; z-index:50}
