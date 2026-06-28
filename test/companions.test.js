@@ -8,7 +8,7 @@ const sandbox = { Math, JSON, console, Date };
 vm.createContext(sandbox); vm.runInContext(src, sandbox);
 const E = sandbox.__Engine;
 let fail = 0;
-const A = (c, m) => { if (!c) { console.log('  ✗ FAIL:', msg); fail++; } else console.log('  ✓', m); };
+const A = (c, m) => { if (!c) { console.log('  ✗ FAIL:', m); fail++; } else console.log('  ✓', m); };
 
 E.newGame({ name: '测队友', gender: '女', age: 24, profession: '学生', period: 'mid', seed: 77 });
 const helper = { name: '白医生', profession: '医生', factionId: 'whitetower', factionName: '白塔医援', personality: 'medic', fear: '感染', stress: 20, wound: 0, affinity: 35, memories: [] };
