@@ -2,9 +2,9 @@
  * 跑：node test/companions.test.js */
 const fs = require('fs'), vm = require('vm'), path = require('path');
 const DIR = path.join(__dirname, '..', 'js') + path.sep;
-const src = fs.readFileSync(DIR + 'data.js', 'utf8') + '\n' + fs.readFileSync(DIR + 'engine.js', 'utf8')
+const src = ['data.js', 'engine.js', 'upgrades.js'].map(f => fs.readFileSync(DIR + f, 'utf8')).join('\n')
   + '\n;globalThis.__Engine = Engine;';
-const sandbox = { Math, JSON, console, Date };
+const sandbox = { Math, JSON, console, Date, window: {} };
 vm.createContext(sandbox); vm.runInContext(src, sandbox);
 const E = sandbox.__Engine;
 let fail = 0;
