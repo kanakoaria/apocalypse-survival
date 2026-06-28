@@ -2,11 +2,11 @@
  * 跑：node test/map.test.js */
 const fs = require('fs'), vm = require('vm'), path = require('path');
 const DIR = path.join(__dirname, '..', 'js') + path.sep;
-const src = ['data.js', 'engine.js', 'offline.js', 'narrator.js', 'ui.js']
+const src = ['data.js', 'engine.js', 'offline.js', 'narrator.js', 'ui.js', 'upgrades.js']
   .map(f => fs.readFileSync(DIR + f, 'utf8')).join('\n')
   + '\n;globalThis.__Engine = Engine; globalThis.__UI = UI; globalThis.__GameData = GameData;';
-const element = () => ({ innerHTML: '', value: '', onclick: null, classList: { add(){}, remove(){}, toggle(){} }, style: {},
-  querySelectorAll(){ return []; }, addEventListener(){}, appendChild(){}, remove() {} });
+const element = () => ({ innerHTML: '', textContent: '', value: '', onclick: null, classList: { add(){}, remove(){}, toggle(){} }, style: {},
+  querySelectorAll(){ return []; }, querySelector(){ return null; }, addEventListener(){}, appendChild(){}, insertAdjacentHTML(){}, remove() {} });
 const sandbox = {
   Math, JSON, console, Date,
   window: { addEventListener() {} },
