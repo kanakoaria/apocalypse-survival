@@ -3,7 +3,7 @@
  * feature, it leaves them alone; otherwise it patches the missing surface.
  */
 (function () {
-  if (typeof GameData === 'undefined' || typeof Engine === 'undefined' || typeof UI === 'undefined') return;
+  if (typeof GameData === 'undefined' || typeof Engine === 'undefined') return;
   if (window.__ARIA_RUNTIME_UPGRADES__) return;
   window.__ARIA_RUNTIME_UPGRADES__ = true;
 
@@ -201,7 +201,7 @@
     };
   }
 
-  if (!UI.traitOptionsHTML) {
+  if (typeof UI !== 'undefined' && UI.renderSetup && !UI.traitOptionsHTML) {
     UI.traitOptionsHTML = function () {
       const groups = { positive: [], negative: [] };
       for (const t of GameData.TRAITS || []) groups[t.kind === 'negative' ? 'negative' : 'positive'].push(t);
@@ -258,7 +258,7 @@
     };
   }
 
-  if (!UI.routeMapHTML) {
+  if (typeof UI !== 'undefined' && !UI.routeMapHTML) {
     UI.routeMapHTML = function (routes) {
       const pos = {
         '庇护所': [55, 105], '居民区': [185, 70], '超市': [185, 150],
@@ -284,6 +284,7 @@
     };
   }
 
+  if (typeof document === 'undefined' || !document.createElement || !document.head) return;
   const style = document.createElement('style');
   style.textContent = `
     .trait-picker{border:1px solid var(--line);background:#0b0b0d;border-radius:4px;padding:10px;display:flex;flex-direction:column;gap:9px}
