@@ -47,12 +47,12 @@ b{color:#e7e2da} em{font-style:normal}
 
 /* ---------------- 建角 ---------------- */
 .setup{max-width:560px; width:100%; margin:auto; max-height:100%; overflow-y:auto;
-  display:flex; flex-direction:column; padding:24px; gap:6px}
+  display:flex; flex-direction:column; padding:18px 24px; gap:6px}
 .setup h1{font-size:42px; margin:0; letter-spacing:4px; color:#e7e2da; text-shadow:0 2px 18px #000}
 .setup h1 span{color:var(--blood); font-size:24px; letter-spacing:2px}
-.setup .tag{color:var(--ink-dim); margin:4px 0 20px; line-height:1.7}
-.form{display:flex; flex-direction:column; gap:14px; background:var(--bg2);
-  border:1px solid var(--line); padding:22px; border-radius:5px}
+.setup .tag{color:var(--ink-dim); margin:4px 0 12px; line-height:1.6}
+.form{display:flex; flex-direction:column; gap:11px; background:var(--bg2);
+  border:1px solid var(--line); padding:18px; border-radius:5px}
 .form label{display:flex; flex-direction:column; gap:6px; color:var(--ink-dim); font-size:13px}
 .form .row{display:flex; gap:14px} .form .row>*{flex:1}
 .save-tools{display:grid; grid-template-columns:1fr 1fr; gap:10px}
