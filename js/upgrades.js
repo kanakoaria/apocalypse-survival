@@ -206,13 +206,13 @@
       const groups = { positive: [], negative: [] };
       for (const t of GameData.TRAITS || []) groups[t.kind === 'negative' ? 'negative' : 'positive'].push(t);
       const title = { positive: '正面特质', negative: '负面特质' };
-      return `<div class="trait-picker">
-        <div class="trait-head"><span>开局特质</span><em id="trait-count">正面 0/2 · 负面 0/2</em></div>
+      return `<details class="trait-picker">
+        <summary class="trait-head"><span><i class="tcaret"></i>开局特质<i class="thint">可选 · 点击展开</i></span><em id="trait-count">正面 0/2 · 负面 0/2</em></summary>
         <div class="trait-cols">${Object.entries(groups).map(([kind, list]) => `
           <div class="trait-col"><b>${title[kind]}</b>
             ${list.map(t => `<label class="trait-card ${kind}" title="${this.esc(t.desc)}"><input type="checkbox" value="${this.esc(t.id)}" data-trait="${kind}"><span>${this.esc(t.name)}</span><small>${this.esc(t.desc)}</small></label>`).join('')}
           </div>`).join('')}</div>
-      </div>`;
+      </details>`;
     };
     UI.selectedTraitIds = function () {
       return Array.from(document.querySelectorAll('[data-trait]:checked')).map(x => x.value);
@@ -287,8 +287,11 @@
   if (typeof document === 'undefined' || !document.createElement || !document.head) return;
   const style = document.createElement('style');
   style.textContent = `
-    .trait-picker{border:1px solid var(--line);background:#0b0b0d;border-radius:4px;padding:10px;display:flex;flex-direction:column;gap:9px}
-    .trait-head{display:flex;justify-content:space-between;gap:10px;align-items:center;color:var(--ink-dim);font-size:13px}.trait-head span{color:#e7e2da}.trait-head em{font-family:var(--mono);color:var(--ink-faint);font-size:11px}
+    .trait-picker{border:1px solid var(--line);background:#0b0b0d;border-radius:4px;padding:10px}.trait-picker[open]>.trait-cols{margin-top:10px}
+    .trait-head{display:flex;justify-content:space-between;gap:10px;align-items:center;color:var(--ink-dim);font-size:13px}.trait-head span{color:#e7e2da;display:inline-flex;align-items:baseline}.trait-head em{font-family:var(--mono);color:var(--ink-faint);font-size:11px;flex:none}
+    .trait-picker>summary{cursor:pointer;list-style:none}.trait-picker>summary::-webkit-details-marker{display:none}.trait-picker>summary:hover span{color:#fff}
+    .trait-picker>summary .tcaret{font-style:normal}.trait-picker>summary .tcaret::before{content:"▸";color:var(--blood-deep);margin-right:6px;display:inline-block}.trait-picker[open]>summary .tcaret::before{content:"▾"}
+    .trait-picker>summary .thint{font-style:normal;color:var(--ink-faint);font-size:11px;margin-left:8px;white-space:nowrap}.trait-picker[open]>summary .thint{display:none}
     .trait-cols{display:grid;grid-template-columns:1fr 1fr;gap:10px}.trait-col{display:flex;flex-direction:column;gap:6px;min-width:0}.trait-col>b{font-size:12px;color:var(--rust);font-weight:normal;letter-spacing:1px}
     .trait-card{display:grid;grid-template-columns:auto 1fr;gap:2px 7px;align-items:start;border:1px solid var(--line2);background:#101114;padding:7px;border-radius:4px;line-height:1.25}.trait-card input{margin-top:2px;accent-color:var(--blood)}.trait-card span{font-size:13px;color:var(--ink)}.trait-card small{grid-column:2;color:var(--ink-faint);font-size:11px;line-height:1.35}
     .trait-card.positive:has(input:checked){border-color:#4a3a1a;background:#17130e}.trait-card.negative:has(input:checked){border-color:var(--blood-deep);background:#1a1012}
