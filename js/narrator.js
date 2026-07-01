@@ -89,6 +89,9 @@ const Narrator = {
     const str = text || '';
     const cfg = this.speedCfg();
     const w = (typeof window !== 'undefined') ? window : null;
+    // 末尾「编号行动」列表整块即时给出：正文逐字，编号选项不逐字（固定按钮不受影响）
+    const om = str.match(/\n\s*\d+[.、]/);
+    const proseEnd = om ? om.index : str.length;
     return new Promise((resolve) => {
       let i = 0, timer = null, done = false;
       const cleanup = () => {
@@ -102,8 +105,11 @@ const Narrator = {
       }
       const tick = () => {
         if (done) return;
-        if (i >= str.length) { finish(); return; }
-        const next = Math.min(str.length, i + cfg.chars);
+        if (i >= proseEnd) {                  // 正文打完 → 编号行动一次性补齐，不逐字
+          if (i < str.length) { onChunk(str.slice(i)); i = str.length; }
+          finish(); return;
+        }
+        const next = Math.min(proseEnd, i + cfg.chars);
         onChunk(str.slice(i, next));
         i = next;
         timer = setTimeout(tick, cfg.tick);
