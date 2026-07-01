@@ -497,19 +497,23 @@ const UI = {
   /* ---------------- 叙事输出 ---------------- */
   async narrate(kind, payload) {
     this.busy = true; this.initBusyCursor(); document.body.classList.add('busy');   // 叙事中 → 转动光标
-    const wait = this.pushNarr('「……」', { temp: true });
-    let out;
-    try { out = await Narrator.narrate(kind, payload); }
-    catch (e) { out = { text: '（叙事出错：' + e.message + '）', delta: null }; }
-    wait.remove();
-    this.pushNarr(out.text, { detail: this.detailLines(kind, payload) });
-    // AI 模式可能附带物品/关系变更：引擎校验落地，绝不含数值
-    if (out.delta) {
-      const ap = Engine.applyAIDelta(out.delta);
-      const line = this.aiDeltaText(ap);
-      if (line) { this.pushSystem(line); this.renderPanel(); this.autosave(); }
+    try {
+      const wait = this.pushNarr('「……」', { temp: true });
+      let out;
+      try { out = await Narrator.narrate(kind, payload); }
+      catch (e) { out = { text: '（叙事出错：' + e.message + '）', delta: null }; }
+      wait.remove();
+      this.pushNarr(out.text, { detail: this.detailLines(kind, payload) });
+      // AI 模式可能附带物品/关系变更：引擎校验落地，绝不含数值
+      if (out.delta) {
+        const ap = Engine.applyAIDelta(out.delta);
+        const line = this.aiDeltaText(ap);
+        if (line) { this.pushSystem(line); this.renderPanel(); this.autosave(); }
+      }
+    } finally {
+      // 无论渲染是否出错，务必解除 busy：否则 body.busy 常驻会让 cursor:none 卡住、光标消失
+      this.busy = false; document.body.classList.remove('busy');
     }
-    this.busy = false; document.body.classList.remove('busy');
   },
 
   aiDeltaText(ap) {

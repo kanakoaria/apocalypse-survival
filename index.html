@@ -9,6 +9,15 @@
   <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/style.css">
   <link rel="stylesheet" href="css/multiplayer.css">
+  <!-- 预加载自定义光标：避免首次 hover 到某类元素时 PNG 未就绪、短暂闪回系统光标 -->
+  <link rel="preload" as="image" href="assets/cursors/default@2x.png">
+  <link rel="preload" as="image" href="assets/cursors/default.png">
+  <link rel="preload" as="image" href="assets/cursors/pointer@2x.png">
+  <link rel="preload" as="image" href="assets/cursors/pointer.png">
+  <link rel="preload" as="image" href="assets/cursors/text@2x.png">
+  <link rel="preload" as="image" href="assets/cursors/text.png">
+  <link rel="preload" as="image" href="assets/cursors/notallowed@2x.png">
+  <link rel="preload" as="image" href="assets/cursors/busy@2x.png">
 </head>
 <body>
   <div id="app"></div>
