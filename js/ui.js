@@ -123,6 +123,7 @@ const UI = {
       </div>`;
     this.renderActions();
     this.renderPanel();
+    this.bindLogScroll();
     this.el('send').onclick = () => this.freeCommand();
     this.el('cmd').onkeydown = e => { if (e.key === 'Enter') this.freeCommand(); };
     this.el('open-settings').onclick = () => this.openSettings();
@@ -440,7 +441,7 @@ const UI = {
       oc.appendChild(b);
     });
     wrap.appendChild(oc);
-    log.appendChild(wrap); log.scrollTop = log.scrollHeight;
+    log.appendChild(wrap); this.scrollFollow();
   },
 
   // 点「处理伤口 / 吃饭 / 喝水」→ 自动使用携带里最合适的一件（不耗行动力，不摇骰）
@@ -494,11 +495,33 @@ const UI = {
     return { kind: 'free', text: t };
   },
 
+  /* ---- 叙事流滚动：黏底 + 滚动锁（跟读又不抢用户的滚动条） ---- */
+  STICK_THRESHOLD: 40,
+  _stick: true,
+  bindLogScroll() {
+    const log = this.el('log');
+    if (!log || log._scrollBound || !log.addEventListener) return;
+    log._scrollBound = true;
+    log.addEventListener('scroll', () => {
+      const gap = log.scrollHeight - log.scrollTop - (log.clientHeight || 0);
+      // 用户上滚离底超过阈值 → 锁定；滚回接近底部 → 恢复自动跟随
+      this._stick = gap <= this.STICK_THRESHOLD;
+    });
+  },
+  // force=true：新回合，重新黏底；否则仅在「已黏底」时跟随最新
+  scrollFollow(force) {
+    const log = this.el('log');
+    if (!log) return;
+    if (force) this._stick = true;
+    if (this._stick) log.scrollTop = log.scrollHeight;
+  },
+
   /* ---------------- 叙事输出 ---------------- */
   async narrate(kind, payload) {
     this.busy = true; this.initBusyCursor(); document.body.classList.add('busy');   // 叙事中 → 转动光标
     try {
       const log = this.el('log');
+      this.scrollFollow(true);                                // 新回合：重新黏底，跟到最新
       const wrap = this.pushNarr('「……」', { temp: true });   // 复用同一气泡做流式，避免闪烁
       let live = '', started = false;
       const onChunk = (delta) => {
@@ -506,7 +529,7 @@ const UI = {
           live += delta;
           if (!started) { started = true; wrap.classList.remove('temp'); }
           this.renderNarrStreaming(wrap, live);
-          log.scrollTop = log.scrollHeight;                  // 增量自动滚动
+          this.scrollFollow();                  // 增量自动滚动
         } catch (e) { /* 增量渲染异常不打断整体，收尾会做全量渲染 */ }
       };
       let out;
@@ -515,7 +538,7 @@ const UI = {
       // 收尾：全量渲染（含编号选项按钮 + 判定详情）。任何流式异常都在此兜底成整段文本。
       wrap.classList.remove('temp');
       this.renderNarrInto(wrap, out.text, { detail: this.detailLines(kind, payload) });
-      log.scrollTop = log.scrollHeight;
+      this.scrollFollow();
       // AI 模式可能附带物品/关系变更：引擎校验落地，绝不含数值
       if (out.delta) {
         const ap = Engine.applyAIDelta(out.delta);
@@ -588,7 +611,7 @@ const UI = {
     wrap.className = 'msg narr' + (temp ? ' temp' : '');
     this.renderNarrInto(wrap, text, { temp, detail });
     log.appendChild(wrap);
-    log.scrollTop = log.scrollHeight;
+    this.scrollFollow();
     return wrap;
   },
 
@@ -631,19 +654,19 @@ const UI = {
     const log = this.el('log');
     const d = document.createElement('div');
     d.className = 'msg player'; d.textContent = text;
-    log.appendChild(d); log.scrollTop = log.scrollHeight;
+    log.appendChild(d); this.scrollFollow();
   },
   pushSystem(text) {
     const log = this.el('log');
     const d = document.createElement('div');
     d.className = 'msg sys'; d.textContent = '· ' + text;
-    log.appendChild(d); log.scrollTop = log.scrollHeight;
+    log.appendChild(d); this.scrollFollow();
   },
   pushDivider(text) {
     const log = this.el('log');
     const d = document.createElement('div');
     d.className = 'divider'; d.innerHTML = `<span>${this.esc(text)}</span>`;
-    log.appendChild(d); log.scrollTop = log.scrollHeight;
+    log.appendChild(d); this.scrollFollow();
   },
 
   esc(t) { return (t || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); },
