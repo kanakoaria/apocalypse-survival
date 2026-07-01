@@ -496,16 +496,19 @@ const UI = {
   },
 
   /* ---- 叙事流滚动：黏底 + 滚动锁（跟读又不抢用户的滚动条） ---- */
-  STICK_THRESHOLD: 40,
+  STICK_THRESHOLD: 8,
   _stick: true,
   bindLogScroll() {
     const log = this.el('log');
     if (!log || log._scrollBound || !log.addEventListener) return;
     log._scrollBound = true;
+    // 用户「往上看」的意图（滚轮上滚 / 触控拖动）→ 立即锁定，哪怕幅度很小也不被拽回
+    log.addEventListener('wheel', e => { if (e.deltaY < 0) this._stick = false; }, { passive: true });
+    log.addEventListener('touchmove', () => { this._stick = false; }, { passive: true });
+    // 只有滚回贴近底部才恢复自动跟随（锁定交给上面的 wheel/touch）
     log.addEventListener('scroll', () => {
       const gap = log.scrollHeight - log.scrollTop - (log.clientHeight || 0);
-      // 用户上滚离底超过阈值 → 锁定；滚回接近底部 → 恢复自动跟随
-      this._stick = gap <= this.STICK_THRESHOLD;
+      if (gap <= this.STICK_THRESHOLD) this._stick = true;
     });
   },
   // force=true：新回合，重新黏底；否则仅在「已黏底」时跟随最新
