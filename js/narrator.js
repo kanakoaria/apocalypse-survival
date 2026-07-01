@@ -13,6 +13,7 @@ const Narrator = {
     apiKey: '',
     model: '',
     baseUrl: '',             // openai 兼容时可填 DeepSeek 等
+    narrSpeed: 'mid',        // 逐字输出速度：'slow' | 'mid' | 'fast'（默认略快于阅读）
   },
 
   load() {
@@ -55,18 +56,61 @@ const Narrator = {
     return panel;
   },
 
-  /* ---- 主入口：返回 { text, delta }；delta 仅含物品/关系，由引擎落地 ---- */
-  async narrate(kind, payload) {
-    if (this.cfg.provider === 'offline' || !this.cfg.apiKey)
-      return { text: this.offline(kind, payload), delta: null };
+  /* ---- 主入口：返回 { text, delta }；delta 仅含物品/关系，由引擎落地
+   * onChunk(textDelta) 可选：文本到达时逐段回调（LLM=SSE 流；离线=打字机）。
+   * 无论走哪条路，返回值形状不变，引擎照旧落地 items/relations。 ---- */
+  async narrate(kind, payload, onChunk) {
+    const cb = typeof onChunk === 'function' ? onChunk : null;
+    if (this.cfg.provider === 'offline' || !this.cfg.apiKey) {
+      const text = this.offline(kind, payload);
+      if (cb) await this.typewriter(text, cb);        // 离线：逐字揭示
+      return { text, delta: null };
+    }
     const facts = this.factsFor(kind, payload);
     let raw;
     try {
-      raw = this.cfg.provider === 'claude' ? await this.callClaude(facts) : await this.callOpenAI(facts);
+      raw = this.cfg.provider === 'claude' ? await this.callClaude(facts, cb) : await this.callOpenAI(facts, cb);
     } catch (e) {
       return { text: `「叙事服务连接失败，已回退离线」\n（${e.message}）\n\n` + this.offline(kind, payload), delta: null };
     }
     return this.parseDelta(raw);
+  },
+
+  /* ---- 离线打字机：按配速把整段文本喂给 onChunk，可点/按键跳过瞬间补全 ---- */
+  speedCfg() {
+    // 中(mid)=略快于阅读，约 38 字/秒；慢约 24/秒；快约 62/秒。
+    return ({
+      slow: { chars: 1, tick: 42 },
+      mid:  { chars: 1, tick: 26 },
+      fast: { chars: 1, tick: 16 },
+    })[this.cfg.narrSpeed] || { chars: 1, tick: 26 };
+  },
+  typewriter(text, onChunk) {
+    const str = text || '';
+    const cfg = this.speedCfg();
+    const w = (typeof window !== 'undefined') ? window : null;
+    return new Promise((resolve) => {
+      let i = 0, timer = null, done = false;
+      const cleanup = () => {
+        if (timer) { clearTimeout(timer); timer = null; }
+        if (w) { w.removeEventListener('pointerdown', skip, true); w.removeEventListener('keydown', skip, true); }
+      };
+      const finish = () => { if (done) return; done = true; cleanup(); resolve(); };
+      function skip() {                       // 点击 / 按键 → 立即补全剩余文本
+        if (i < str.length) { onChunk(str.slice(i)); i = str.length; }
+        finish();
+      }
+      const tick = () => {
+        if (done) return;
+        if (i >= str.length) { finish(); return; }
+        const next = Math.min(str.length, i + cfg.chars);
+        onChunk(str.slice(i, next));
+        i = next;
+        timer = setTimeout(tick, cfg.tick);
+      };
+      if (w) { w.addEventListener('pointerdown', skip, true); w.addEventListener('keydown', skip, true); }
+      tick();
+    });
   },
 
   // 从 LLM 输出末尾抽取可选的 ```json``` 世界变更块，剥离后返回纯叙事
@@ -86,7 +130,7 @@ const Narrator = {
     return { text, delta };
   },
 
-  async callClaude(userText) {
+  async callClaude(userText, onChunk) {
     const r = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
@@ -98,16 +142,16 @@ const Narrator = {
       body: JSON.stringify({
         model: this.defaultModel(),
         max_tokens: 1200,
+        stream: true,
         system: GameData.systemPrompt(),
         messages: [{ role: 'user', content: userText }],
       }),
     });
     if (!r.ok) throw new Error('Claude ' + r.status + ' ' + (await r.text()).slice(0, 200));
-    const j = await r.json();
-    return j.content.map(c => c.text || '').join('');
+    return this.readSSE(r, 'claude', onChunk);
   },
 
-  async callOpenAI(userText) {
+  async callOpenAI(userText, onChunk) {
     const base = this.cfg.baseUrl || 'https://api.deepseek.com';
     const r = await fetch(base.replace(/\/$/, '') + '/v1/chat/completions', {
       method: 'POST',
@@ -116,6 +160,7 @@ const Narrator = {
         model: this.defaultModel(),
         temperature: 1.0,
         max_tokens: 1200,
+        stream: true,
         messages: [
           { role: 'system', content: GameData.systemPrompt() },
           { role: 'user', content: userText },
@@ -123,8 +168,65 @@ const Narrator = {
       }),
     });
     if (!r.ok) throw new Error('API ' + r.status + ' ' + (await r.text()).slice(0, 200));
-    const j = await r.json();
-    return j.choices[0].message.content;
+    return this.readSSE(r, 'openai', onChunk);
+  },
+
+  /* ---- SSE 流解析 ----
+   * makeStreamParser(provider, onChunk) 是纯函数（不依赖 fetch/DOM，便于测试）：
+   * 逐块 push(str)，跨块缓冲不完整的行，按 \n 切行，解析 data: JSON，
+   * 有文本增量就 onChunk(textDelta)，并累积返回完整文本。 */
+  makeStreamParser(provider, onChunk) {
+    let buffer = '', acc = '', done = false;
+    const emit = (t) => { if (t) { acc += t; if (onChunk) onChunk(t); } };
+    const handleData = (dataStr) => {
+      if (provider === 'openai' && dataStr === '[DONE]') { done = true; return; }
+      let obj;
+      try { obj = JSON.parse(dataStr); } catch (e) { return; }   // 非 JSON（心跳/注释）忽略
+      if (provider === 'claude') {
+        if (obj.type === 'content_block_delta' && obj.delta && obj.delta.type === 'text_delta') emit(obj.delta.text || '');
+        else if (obj.type === 'message_stop') done = true;
+      } else {
+        const d = obj.choices && obj.choices[0] && obj.choices[0].delta;
+        if (d && typeof d.content === 'string') emit(d.content);
+      }
+    };
+    const consume = (line) => {
+      const ln = line.replace(/\r$/, '');
+      if (ln.slice(0, 5) === 'data:') {           // 只关心 data: 行，忽略 event:/其它
+        const dataStr = ln.slice(5).trim();
+        if (dataStr) handleData(dataStr);
+      }
+    };
+    return {
+      push(str) {
+        buffer += str;
+        let idx;
+        while ((idx = buffer.indexOf('\n')) >= 0) {
+          consume(buffer.slice(0, idx));
+          buffer = buffer.slice(idx + 1);
+        }
+      },
+      flush() { if (buffer) { consume(buffer); buffer = ''; } },   // 收尾：处理无换行的残行
+      text() { return acc; },
+      get done() { return done; },
+    };
+  },
+
+  async readSSE(response, provider, onChunk) {
+    if (!response.body || !response.body.getReader)
+      throw new Error('stream unsupported');                      // 触发上层回退离线
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    const parser = this.makeStreamParser(provider, onChunk);
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      parser.push(decoder.decode(value, { stream: true }));
+      if (parser.done) break;
+    }
+    parser.push(decoder.decode());                                // 冲刷解码器
+    parser.flush();
+    return parser.text();
   },
 
   /* ---- 离线叙事：委托给程序化涌现叙事器 ---- */

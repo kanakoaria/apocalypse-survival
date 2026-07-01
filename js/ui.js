@@ -498,12 +498,24 @@ const UI = {
   async narrate(kind, payload) {
     this.busy = true; this.initBusyCursor(); document.body.classList.add('busy');   // 叙事中 → 转动光标
     try {
-      const wait = this.pushNarr('「……」', { temp: true });
+      const log = this.el('log');
+      const wrap = this.pushNarr('「……」', { temp: true });   // 复用同一气泡做流式，避免闪烁
+      let live = '', started = false;
+      const onChunk = (delta) => {
+        try {
+          live += delta;
+          if (!started) { started = true; wrap.classList.remove('temp'); }
+          this.renderNarrStreaming(wrap, live);
+          log.scrollTop = log.scrollHeight;                  // 增量自动滚动
+        } catch (e) { /* 增量渲染异常不打断整体，收尾会做全量渲染 */ }
+      };
       let out;
-      try { out = await Narrator.narrate(kind, payload); }
+      try { out = await Narrator.narrate(kind, payload, onChunk); }
       catch (e) { out = { text: '（叙事出错：' + e.message + '）', delta: null }; }
-      wait.remove();
-      this.pushNarr(out.text, { detail: this.detailLines(kind, payload) });
+      // 收尾：全量渲染（含编号选项按钮 + 判定详情）。任何流式异常都在此兜底成整段文本。
+      wrap.classList.remove('temp');
+      this.renderNarrInto(wrap, out.text, { detail: this.detailLines(kind, payload) });
+      log.scrollTop = log.scrollHeight;
       // AI 模式可能附带物品/关系变更：引擎校验落地，绝不含数值
       if (out.delta) {
         const ap = Engine.applyAIDelta(out.delta);
@@ -574,7 +586,14 @@ const UI = {
     const log = this.el('log');
     const wrap = document.createElement('div');
     wrap.className = 'msg narr' + (temp ? ' temp' : '');
+    this.renderNarrInto(wrap, text, { temp, detail });
+    log.appendChild(wrap);
+    log.scrollTop = log.scrollHeight;
+    return wrap;
+  },
 
+  // 把叙事文本渲染进一个既有气泡（供 pushNarr 与流式收尾复用）
+  renderNarrInto(wrap, text, { temp = false, detail = null } = {}) {
     const lines = (text || '').split('\n');
     const proseLines = [], options = [];
     for (const ln of lines) {
@@ -599,9 +618,13 @@ const UI = {
       });
       wrap.appendChild(oc);
     }
-    log.appendChild(wrap);
-    log.scrollTop = log.scrollHeight;
-    return wrap;
+  },
+
+  // 流式增量渲染：只出正文（编号选项此刻当普通段落显示，收尾再变按钮）；
+  // 隐去末尾 ```json``` 世界变更块，避免半截代码块闪现。
+  renderNarrStreaming(wrap, text) {
+    const shown = (text || '').replace(/```[\s\S]*$/, '');
+    wrap.innerHTML = this.fmtProse(shown);
   },
 
   pushPlayer(text) {
@@ -1016,7 +1039,14 @@ const UI = {
         <label>API Key <input id="m-key" type="password" placeholder="sk-..."></label>
         <label>模型 <input id="m-model" placeholder="claude-sonnet-4-6 或 deepseek-chat"></label>
         <label id="m-base-wrap">Base URL（OpenAI 兼容时）<input id="m-base" placeholder="https://api.deepseek.com"></label>
-        <p class="hint">注：浏览器直连第三方 API 需对方允许 CORS。Key 仅存于本机 localStorage。</p>
+        <label>叙事速度（逐字输出）
+          <select id="m-narr-speed">
+            <option value="slow">慢</option>
+            <option value="mid">中（略快于阅读）</option>
+            <option value="fast">快</option>
+          </select>
+        </label>
+        <p class="hint">注：浏览器直连第三方 API 需对方允许 CORS。Key 仅存于本机 localStorage。离线逐字时点一下或按任意键可立刻看完。</p>
         <div class="row">
           <button class="primary" id="m-save">保存</button>
           <button class="ghost" id="m-close">取消</button>
@@ -1029,6 +1059,7 @@ const UI = {
         apiKey: this.el('m-key').value.trim(),
         model: this.el('m-model').value.trim(),
         baseUrl: this.el('m-base').value.trim(),
+        narrSpeed: this.el('m-narr-speed').value,
       });
       this.closeSettings(); this.refreshAIStatus(); this.toast('已保存设置');
     };
@@ -1043,6 +1074,7 @@ const UI = {
     this.el('m-key').value = c.apiKey || '';
     this.el('m-model').value = c.model || '';
     this.el('m-base').value = c.baseUrl || '';
+    this.el('m-narr-speed').value = c.narrSpeed || 'mid';
     this.el('m-base-wrap').style.display = c.provider === 'openai' ? '' : 'none';
     this.el('modal').classList.remove('hidden');
   },
