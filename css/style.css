@@ -46,8 +46,8 @@ b{color:#e7e2da} em{font-style:normal}
 .dim{color:var(--ink-dim)} .small{font-size:12px}
 
 /* ---------------- 建角 ---------------- */
-.setup{max-width:560px; margin:0 auto; height:100%; display:flex; flex-direction:column;
-  justify-content:center; padding:24px; gap:6px}
+.setup{max-width:560px; width:100%; margin:auto; max-height:100%; overflow-y:auto;
+  display:flex; flex-direction:column; padding:24px; gap:6px}
 .setup h1{font-size:42px; margin:0; letter-spacing:4px; color:#e7e2da; text-shadow:0 2px 18px #000}
 .setup h1 span{color:var(--blood); font-size:24px; letter-spacing:2px}
 .setup .tag{color:var(--ink-dim); margin:4px 0 20px; line-height:1.7}
